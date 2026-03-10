@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # MongoDB for Notifications Service
+  notifications-db:
+    image: mongo:7.0
+    container_name: voltguard-notifications-db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: notifications_password
+      MONGO_INITDB_DATABASE: notifications_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - notifications-db-data:/data/db
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Notifications Service
+  notifications-service:
+    build:
+      context: ./notifications-service
+      dockerfile: Dockerfile
+    container_name: voltguard-notifications-service
+    environment:
+      MONGODB_URL: mongodb://admin:notifications_password@notifications-db:27017
+      MONGODB_DATABASE: notifications_db
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8083
+      AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
+      TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
+      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-noreply@voltguard.com}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8083:8083"
+    depends_on:
+      notifications-db:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+
+volumes:
+  notifications-db-data:
+
+networks:
+  voltguard-network:
+    driver: bridge
