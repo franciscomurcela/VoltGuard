@@ -1,0 +1,43 @@
+services:
+  postgres-oam:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: oam_user
+      POSTGRES_PASSWORD: oam_pass
+      POSTGRES_DB: oam_db
+    volumes:
+      - oam_postgres_data:/var/lib/postgresql/data
+    networks:
+      - voltguard_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  oam-service:
+    build:
+      context: ./oam-service
+    environment:
+      DATABASE_URL: postgres://oam_user:oam_pass@postgres-oam:5432/oam_db
+      SERVER_ADDR: 0.0.0.0:8080
+      FIRMWARE_STORAGE_PATH: /app/firmware_storage
+      BASE_URL: http://localhost:8080
+      RUST_LOG: info
+    volumes:
+      - oam_firmware_storage:/app/firmware_storage
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-oam:
+        condition: service_healthy
+    networks:
+      - voltguard_network
+
+networks:
+  voltguard_network:
+    driver: bridge
+
+volumes:
+  oam_postgres_data:
+  oam_firmware_storage:

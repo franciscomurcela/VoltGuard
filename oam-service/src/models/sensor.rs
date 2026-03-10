@@ -27,9 +27,6 @@ pub struct Sensor {
     pub current_firmware_id: Option<Uuid>,
     pub anomaly_status: AnomalyStatus,
     pub pending_action: PendingAction,
-    // Internal field used by keepalive — not exposed in API responses
-    #[serde(skip)]
-    pub pending_firmware_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
