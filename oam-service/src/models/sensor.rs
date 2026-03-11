@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -37,4 +39,22 @@ pub struct SensorInput {
     pub district: String,
     /// Firmware currently installed on this sensor at registration time (optional)
     pub firmware_id: Option<Uuid>,
+}
+
+/// Partial update — all fields optional, only provided ones are changed.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SensorPatch {
+    pub name: Option<String>,
+    pub district: Option<String>,
+}
+
+/// Aggregate statistics across all sensors.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SensorStats {
+    pub total: i64,
+    /// Sensors with a keepalive in the last 5 minutes
+    pub online: i64,
+    pub offline: i64,
+    pub with_anomaly: i64,
+    pub by_district: HashMap<String, i64>,
 }

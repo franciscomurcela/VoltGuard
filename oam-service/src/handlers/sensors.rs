@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     db::{self, AppState},
     error::{ApiError, ErrorBody},
-    models::sensor::{Sensor, SensorInput},
+    models::sensor::{Sensor, SensorInput, SensorPatch, SensorStats},
 };
 
 #[derive(Deserialize)]
@@ -47,7 +47,8 @@ pub async fn create(
             .ok_or_else(|| ApiError::NotFound(format!("Firmware '{}' not found", firmware_id)))?;
     }
 
-    let sensor = db::sensors::insert(&state.pool, &input.name, &input.district, input.firmware_id).await?;
+    let sensor =
+        db::sensors::insert(&state.pool, &input.name, &input.district, input.firmware_id).await?;
     Ok((StatusCode::CREATED, Json(sensor)))
 }
 
@@ -97,6 +98,39 @@ pub async fn get_one(
 }
 
 #[utoipa::path(
+    patch,
+    path = "/sensors/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Sensor ID"),
+    ),
+    request_body = SensorPatch,
+    responses(
+        (status = 200, description = "Sensor updated", body = Sensor),
+        (status = 400, description = "Invalid input", body = ErrorBody),
+        (status = 404, description = "Sensor not found", body = ErrorBody),
+    ),
+    tag = "Sensors",
+)]
+pub async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SensorPatch>,
+) -> Result<Json<Sensor>, ApiError> {
+    if input.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+        return Err(ApiError::BadRequest("name cannot be empty".to_string()));
+    }
+    if input.district.as_deref().is_some_and(|d| d.trim().is_empty()) {
+        return Err(ApiError::BadRequest("district cannot be empty".to_string()));
+    }
+
+    let sensor = db::sensors::update(&state.pool, id, input.name.as_deref(), input.district.as_deref())
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
+
+    Ok(Json(sensor))
+}
+
+#[utoipa::path(
     delete,
     path = "/sensors/{id}",
     params(
@@ -118,4 +152,17 @@ pub async fn delete(
     } else {
         Err(ApiError::NotFound(format!("Sensor '{}' not found", id)))
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/sensors/stats",
+    responses(
+        (status = 200, description = "Aggregate sensor statistics", body = SensorStats),
+    ),
+    tag = "Sensors",
+)]
+pub async fn stats(State(state): State<AppState>) -> Result<Json<SensorStats>, ApiError> {
+    let stats = db::sensors::stats(&state.pool).await?;
+    Ok(Json(stats))
 }

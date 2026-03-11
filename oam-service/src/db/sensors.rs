@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::models::sensor::{AnomalyStatus, PendingAction, Sensor};
+use crate::models::sensor::{AnomalyStatus, PendingAction, Sensor, SensorStats};
 
 const SELECT_FIELDS: &str =
     "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action";
@@ -37,6 +37,27 @@ pub async fn find_by_id(pool: &DbPool, id: Uuid) -> Result<Option<Sensor>, sqlx:
     sqlx::query_as::<_, Sensor>(&format!(
         "SELECT {SELECT_FIELDS} FROM sensors WHERE id = $1"
     ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Partial update — COALESCE keeps existing value when the argument is NULL.
+pub async fn update(
+    pool: &DbPool,
+    id: Uuid,
+    name: Option<&str>,
+    district: Option<&str>,
+) -> Result<Option<Sensor>, sqlx::Error> {
+    sqlx::query_as::<_, Sensor>(&format!(
+        "UPDATE sensors
+         SET name     = COALESCE($1, name),
+             district = COALESCE($2, district)
+         WHERE id = $3
+         RETURNING {SELECT_FIELDS}"
+    ))
+    .bind(name)
+    .bind(district)
     .bind(id)
     .fetch_optional(pool)
     .await
@@ -120,4 +141,43 @@ pub async fn clear_anomaly(pool: &DbPool, id: Uuid) -> Result<Option<Sensor>, sq
     .bind(id)
     .fetch_optional(pool)
     .await
+}
+
+#[derive(sqlx::FromRow)]
+struct SensorCounts {
+    total: i64,
+    online: i64,
+    with_anomaly: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct DistrictRow {
+    district: String,
+    count: i64,
+}
+
+pub async fn stats(pool: &DbPool) -> Result<SensorStats, sqlx::Error> {
+    let counts = sqlx::query_as::<_, SensorCounts>(
+        "SELECT
+             COUNT(*)                                                                      AS total,
+             COUNT(*) FILTER (WHERE ultimo_keepalive > NOW() - INTERVAL '5 minutes')     AS online,
+             COUNT(*) FILTER (WHERE anomaly_status = 'DETECTED')                         AS with_anomaly
+         FROM sensors",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let districts = sqlx::query_as::<_, DistrictRow>(
+        "SELECT district, COUNT(*) AS count FROM sensors GROUP BY district ORDER BY district",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(SensorStats {
+        total: counts.total,
+        online: counts.online,
+        offline: counts.total - counts.online,
+        with_anomaly: counts.with_anomaly,
+        by_district: districts.into_iter().map(|r| (r.district, r.count)).collect(),
+    })
 }
