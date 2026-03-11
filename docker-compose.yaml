@@ -1,43 +1,56 @@
+version: '3.8'
+
 services:
-  postgres-oam:
-    image: postgres:17-alpine
+  # MongoDB for Notifications Service
+  notifications-db:
+    image: mongo:7.0
+    container_name: voltguard-notifications-db
     environment:
-      POSTGRES_USER: oam_user
-      POSTGRES_PASSWORD: oam_pass
-      POSTGRES_DB: oam_db
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: notifications_password
+      MONGO_INITDB_DATABASE: notifications_db
+    ports:
+      - "27017:27017"
     volumes:
-      - oam_postgres_data:/var/lib/postgresql/data
+      - notifications-db-data:/data/db
     networks:
-      - voltguard_network
+      - voltguard-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
-      interval: 5s
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
-  oam-service:
+  # Notifications Service
+  notifications-service:
     build:
-      context: ./oam-service
+      context: ./notifications-service
+      dockerfile: Dockerfile
+    container_name: voltguard-notifications-service
     environment:
-      DATABASE_URL: postgres://oam_user:oam_pass@postgres-oam:5432/oam_db
-      SERVER_ADDR: 0.0.0.0:8080
-      FIRMWARE_STORAGE_PATH: /app/firmware_storage
-      BASE_URL: http://localhost:8080
-      RUST_LOG: info
-    volumes:
-      - oam_firmware_storage:/app/firmware_storage
+      MONGODB_URL: mongodb://admin:notifications_password@notifications-db:27017
+      MONGODB_DATABASE: notifications_db
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8083
+      AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
+      TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
+      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-noreply@voltguard.com}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
-      - "8080:8080"
+      - "8083:8083"
     depends_on:
-      postgres-oam:
+      notifications-db:
         condition: service_healthy
     networks:
-      - voltguard_network
-
-networks:
-  voltguard_network:
-    driver: bridge
+      - voltguard-network
 
 volumes:
-  oam_postgres_data:
-  oam_firmware_storage:
+  notifications-db-data:
+
+networks:
+  voltguard-network:
+    driver: bridge

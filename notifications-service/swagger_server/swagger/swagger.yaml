@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: Notifications API (Multichannel Gateway)
+  description: "API genérica e agnóstica para envio de notificações multicanal (Twilio,\
+    \ Email, etc.). Suporta filtragem por cliente, autenticação via query parameter\
+    \ e opt-out seguro."
+  version: 1.0.0
+servers:
+- url: /
+security:
+- AuthTokenQuery: []
+paths:
+  /v1/notifications:
+    get:
+      tags:
+      - Notifications
+      summary: Obter histórico de notificações (Filtrado por Cliente)
+      description: Retorna a lista de notificações enviadas. Obriga a filtrar por
+        `client_id` (ex. energy_composer) para que cada componente só veja as suas
+        próprias notificações.
+      operationId: v1_notifications_get
+      parameters:
+      - name: client_id
+        in: query
+        description: ID do microsserviço que enviou a notificação (Obrigatório).
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Número máximo de registos a retornar (Paginação).
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: integer
+          default: 25
+      - name: offset
+        in: query
+        description: Número de registos a saltar (Paginação).
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: integer
+          default: 0
+      responses:
+        "200":
+          description: OK - Lista paginada retornada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationResponse"
+                x-content-type: application/json
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+    post:
+      tags:
+      - Notifications
+      summary: Enviar uma nova notificação
+      description: Recebe um pedido genérico e usa o canal configurado (ex. Twilio)
+        para enviar a mensagem. Requer auth_token no URL.
+      operationId: v1_notifications_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRequest"
+        required: true
+      responses:
+        "201":
+          description: CREATED - Notificação enviada/registada com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+        "400":
+          description: BAD REQUEST - Falha na validação dos dados de entrada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: UNAUTHORIZED - Token de autenticação em falta ou inválido.
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+  /v1/notifications/{id}:
+    get:
+      tags:
+      - Notifications
+      summary: Consultar estado de entrega
+      description: Permite verificar se um SMS do Twilio foi "Entregue" ou "Falhou".
+      operationId: v1_notifications_id_get
+      parameters:
+      - name: id
+        in: path
+        description: ID único da notificação.
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK - Detalhes da notificação.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+        "404":
+          description: NOT FOUND - Notificação não encontrada no sistema.
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+  /v1/channels:
+    post:
+      tags:
+      - Channels
+      summary: Registar novo canal de envio dinamicamente
+      description: Regista um novo provedor (ex. Twilio) na base de dados sem necessidade
+        de redeploy.
+      operationId: v1_channels_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelRequest"
+        required: true
+      responses:
+        "201":
+          description: CREATED - Canal registado.
+      x-openapi-router-controller: swagger_server.controllers.channels_controller
+  /v1/opt-out:
+    post:
+      tags:
+      - Public
+      summary: Cancelar subscrição de um canal (Opt-out)
+      description: "Endpoint público usado pelo link mágico recebido pelo utilizador\
+        \ final. Não precisa do auth_token geral, pois o próprio parâmetro `secret`\
+        \ serve como autenticação."
+      operationId: v1_opt_out_post
+      parameters:
+      - name: secret
+        in: query
+        description: Hash/Secret único gerado para o utilizador.
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK - Opt-out realizado com sucesso.
+      security: []
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+  /health:
+    get:
+      tags:
+      - Public
+      summary: Health check
+      operationId: health_get
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+      security: []
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+components:
+  schemas:
+    NotificationRequest:
+      required:
+      - channel
+      - client_id
+      - message_template
+      - target
+      type: object
+      properties:
+        client_id:
+          type: string
+          example: energy_composer
+        target:
+          type: string
+          description: Número de telefone ou email de destino.
+          example: "+351912345678"
+        channel:
+          type: string
+          example: twilio_sms
+        message_template:
+          type: string
+          example: "Alerta: Falha detetada no sensor {{sensor_id}}."
+        variables:
+          type: object
+          description: Variáveis dinâmicas para injetar no template.
+          example:
+            sensor_id: SENS-001
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: notif_890xyz
+        client_id:
+          type: string
+          example: energy_composer
+        status:
+          type: string
+          example: DELIVERED
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-03-04T10:30:00Z
+      example:
+        created_at: 2026-03-04T10:30:00Z
+        id: notif_890xyz
+        client_id: energy_composer
+        status: DELIVERED
+    ChannelRequest:
+      required:
+      - api_key
+      - name
+      - provider
+      type: object
+      properties:
+        name:
+          type: string
+          example: twilio_sms_urgent
+        provider:
+          type: string
+          example: twilio
+        api_key:
+          type: string
+          example: AK_12345XYZ
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorResponse_error"
+    ErrorResponse_error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: O parâmetro 'target' é obrigatório.
+        type:
+          type: string
+          example: ValidationException
+        code:
+          type: integer
+          example: 400
+  securitySchemes:
+    AuthTokenQuery:
+      type: apiKey
+      description: Token de autenticação obrigatório no URL.
+      name: auth_token
+      in: query
+      x-apikeyInfoFunc: swagger_server.controllers.authorization_controller.check_AuthTokenQuery
