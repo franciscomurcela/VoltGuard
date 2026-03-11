@@ -4,13 +4,21 @@ use crate::db::DbPool;
 use crate::models::sensor::{AnomalyStatus, PendingAction, Sensor};
 
 const SELECT_FIELDS: &str =
-    "id, name, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action";
+    "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action";
 
-pub async fn insert(pool: &DbPool, name: &str) -> Result<Sensor, sqlx::Error> {
+pub async fn insert(
+    pool: &DbPool,
+    name: &str,
+    district: &str,
+    firmware_id: Option<Uuid>,
+) -> Result<Sensor, sqlx::Error> {
     sqlx::query_as::<_, Sensor>(&format!(
-        "INSERT INTO sensors (name) VALUES ($1) RETURNING {SELECT_FIELDS}"
+        "INSERT INTO sensors (name, district, current_firmware_id)
+         VALUES ($1, $2, $3) RETURNING {SELECT_FIELDS}"
     ))
     .bind(name)
+    .bind(district)
+    .bind(firmware_id)
     .fetch_one(pool)
     .await
 }
@@ -82,9 +90,17 @@ pub async fn keepalive(pool: &DbPool, id: Uuid) -> Result<Option<PendingState>, 
         return Ok(None); // tx dropped here → implicit rollback
     }
 
+    // If delivering UPDATE_FIRMWARE, apply pending_firmware_id → current_firmware_id atomically
     sqlx::query(
         "UPDATE sensors
-         SET ultimo_keepalive = NOW(), pending_action = 'NONE', pending_firmware_id = NULL
+         SET ultimo_keepalive        = NOW(),
+             pending_action          = 'NONE',
+             current_firmware_id     = CASE
+                                         WHEN pending_action = 'UPDATE_FIRMWARE'
+                                         THEN pending_firmware_id
+                                         ELSE current_firmware_id
+                                       END,
+             pending_firmware_id     = NULL
          WHERE id = $1",
     )
     .bind(id)
