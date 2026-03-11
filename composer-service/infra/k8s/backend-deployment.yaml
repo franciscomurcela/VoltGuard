@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compositor-backend
+  namespace: iot-platform
+  labels:
+    app: compositor-backend
+    component: backend
+    tier: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: compositor-backend
+  template:
+    metadata:
+      labels:
+        app: compositor-backend
+        component: backend
+    spec:
+      containers:
+        - name: compositor-backend
+          image: registry.example.com/iot-platform/compositor-backend:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: compositor-config
+            - secretRef:
+                name: compositor-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compositor-backend
+  namespace: iot-platform
+  labels:
+    app: compositor-backend
+spec:
+  selector:
+    app: compositor-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
