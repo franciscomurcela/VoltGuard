@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  # ─── Keycloak ────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\n\r\n' >&3 && cat <&3 | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Compositor Backend ──────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../infra/Dockerfile.backend
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      NODE_ENV: development
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: iot-compositor
+      KEYCLOAK_CLIENT_ID: compositor-backend
+      KEYCLOAK_CLIENT_SECRET: change-me-in-production
+      OAM_SERVICE_URL: http://host.docker.internal:8091
+      NOTIFICATION_SERVICE_URL: http://host.docker.internal:8092
+      ANOMALY_SERVICE_URL: http://host.docker.internal:8093
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # ─── Compositor Frontend ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
