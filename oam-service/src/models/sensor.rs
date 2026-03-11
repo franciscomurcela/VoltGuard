@@ -24,6 +24,7 @@ pub enum PendingAction {
 pub struct Sensor {
     pub id: Uuid,
     pub name: String,
+    pub district: String,
     pub ultimo_keepalive: Option<DateTime<Utc>>,
     pub current_firmware_id: Option<Uuid>,
     pub anomaly_status: AnomalyStatus,
@@ -33,4 +34,7 @@ pub struct Sensor {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SensorInput {
     pub name: String,
+    pub district: String,
+    /// Firmware currently installed on this sensor at registration time (optional)
+    pub firmware_id: Option<Uuid>,
 }

@@ -36,8 +36,18 @@ pub async fn create(
     if input.name.trim().is_empty() {
         return Err(ApiError::BadRequest("name cannot be empty".to_string()));
     }
+    if input.district.trim().is_empty() {
+        return Err(ApiError::BadRequest("district cannot be empty".to_string()));
+    }
 
-    let sensor = db::sensors::insert(&state.pool, &input.name).await?;
+    // If an initial firmware is provided, verify it exists before registering the sensor
+    if let Some(firmware_id) = input.firmware_id {
+        db::firmware::find_by_id(&state.pool, firmware_id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound(format!("Firmware '{}' not found", firmware_id)))?;
+    }
+
+    let sensor = db::sensors::insert(&state.pool, &input.name, &input.district, input.firmware_id).await?;
     Ok((StatusCode::CREATED, Json(sensor)))
 }
 
