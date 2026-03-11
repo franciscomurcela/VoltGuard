@@ -1,22 +1,16 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine
 
-WORKDIR /app
+RUN mkdir -p /usr/src/app
+WORKDIR /usr/src/app
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /usr/src/app/
+RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY app ./app
+COPY . /usr/src/app
 
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8083
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8083"]
+ENTRYPOINT ["python3"]
+CMD ["-m", "swagger_server"]
