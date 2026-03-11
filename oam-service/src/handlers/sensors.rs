@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     db::{self, AppState},
-    error::ApiError,
+    error::{ApiError, ErrorBody},
     models::sensor::{Sensor, SensorInput},
 };
 
@@ -18,6 +18,17 @@ pub struct PaginationQuery {
     pub limit: Option<i64>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/sensors",
+    request_body = SensorInput,
+    responses(
+        (status = 201, description = "Sensor created", body = Sensor),
+        (status = 400, description = "Invalid input", body = ErrorBody),
+        (status = 409, description = "Name already exists", body = ErrorBody),
+    ),
+    tag = "Sensors",
+)]
 pub async fn create(
     State(state): State<AppState>,
     Json(input): Json<SensorInput>,
@@ -30,6 +41,18 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(sensor)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/sensors",
+    params(
+        ("page" = Option<i64>, Query, description = "Page number (default: 1)"),
+        ("limit" = Option<i64>, Query, description = "Items per page (default: 10, max: 100)"),
+    ),
+    responses(
+        (status = 200, description = "List of sensors", body = Vec<Sensor>),
+    ),
+    tag = "Sensors",
+)]
 pub async fn list(
     State(state): State<AppState>,
     Query(params): Query<PaginationQuery>,
@@ -41,6 +64,18 @@ pub async fn list(
     Ok(Json(sensors))
 }
 
+#[utoipa::path(
+    get,
+    path = "/sensors/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Sensor ID"),
+    ),
+    responses(
+        (status = 200, description = "Sensor found", body = Sensor),
+        (status = 404, description = "Sensor not found", body = ErrorBody),
+    ),
+    tag = "Sensors",
+)]
 pub async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -51,6 +86,18 @@ pub async fn get_one(
     Ok(Json(sensor))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/sensors/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Sensor ID"),
+    ),
+    responses(
+        (status = 204, description = "Sensor deleted"),
+        (status = 404, description = "Sensor not found", body = ErrorBody),
+    ),
+    tag = "Sensors",
+)]
 pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

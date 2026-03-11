@@ -10,15 +10,17 @@ use axum::{
     Router,
 };
 use tower_http::trace::TraceLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
-use crate::db::AppState;
+use crate::{db::AppState, openapi::ApiDoc};
 
 async fn health() -> axum::http::StatusCode {
     axum::http::StatusCode::OK
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let api = Router::new()
         .route("/health", get(health))
         // Inventory
         .route("/sensors", post(sensors::create).get(sensors::list))
@@ -35,5 +37,10 @@ pub fn router(state: AppState) -> Router {
         .route("/sensors/:id/keepalive", post(keepalive::keepalive))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state);
+
+    api.merge(
+        SwaggerUi::new("/swagger-ui")
+            .url("/api-docs/openapi.json", ApiDoc::openapi()),
+    )
 }
