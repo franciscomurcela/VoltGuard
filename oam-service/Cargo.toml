@@ -17,3 +17,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
 tokio-util = { version = "0.7", features = ["io"] }
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+[profile.release]
+strip = true
+lto = "thin"

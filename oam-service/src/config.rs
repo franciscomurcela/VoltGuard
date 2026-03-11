@@ -4,6 +4,7 @@ pub struct Config {
     pub database_url: String,
     pub server_addr: String,
     pub firmware_storage_path: String,
+    pub base_url: String,
 }
 
 impl Config {
@@ -14,6 +15,8 @@ impl Config {
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             firmware_storage_path: env::var("FIRMWARE_STORAGE_PATH")
                 .unwrap_or_else(|_| "./firmware_storage".to_string()),
+            base_url: env::var("BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
         }
     }
 }

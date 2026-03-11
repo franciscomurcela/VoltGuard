@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod handlers;
 mod models;
+mod openapi;
 
 #[tokio::main]
 async fn main() {
@@ -30,6 +31,7 @@ async fn main() {
     let state = db::AppState {
         pool,
         firmware_storage_path: config.firmware_storage_path,
+        base_url: config.base_url,
     };
 
     let app = handlers::router(state);

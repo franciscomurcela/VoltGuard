@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # RabbitMQ - Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: anomaly-rabbitmq
+    ports:
+      - "5672:5672"    # AMQP protocol
+      - "15672:15672"  # Management UI (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: voltguard
+      RABBITMQ_DEFAULT_PASS: voltguard123
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Result Backend
+  redis:
+    image: redis:7.2-alpine
+    container_name: anomaly-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
