@@ -7,14 +7,37 @@ use axum::{
 };
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
     db::{self, AppState},
-    error::ApiError,
+    error::{ApiError, ErrorBody},
     models::firmware::Firmware,
 };
 
+/// Schema-only struct to document the multipart upload fields in Swagger UI.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct FirmwareUploadRequest {
+    /// Firmware version string (e.g. "v1.2.0")
+    pub version: String,
+    /// Binary firmware file
+    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    pub file: Vec<u8>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/firmwares",
+    request_body(content = FirmwareUploadRequest, content_type = "multipart/form-data"),
+    responses(
+        (status = 201, description = "Firmware uploaded"),
+        (status = 400, description = "Missing or invalid fields", body = ErrorBody),
+        (status = 409, description = "Version already exists", body = ErrorBody),
+    ),
+    tag = "Firmware",
+)]
 pub async fn upload(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -66,11 +89,31 @@ pub async fn upload(
     Ok(StatusCode::CREATED)
 }
 
+#[utoipa::path(
+    get,
+    path = "/firmwares",
+    responses(
+        (status = 200, description = "List of firmwares", body = Vec<Firmware>),
+    ),
+    tag = "Firmware",
+)]
 pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<Firmware>>, ApiError> {
     let firmwares = db::firmware::find_all(&state.pool).await?;
     Ok(Json(firmwares))
 }
 
+#[utoipa::path(
+    get,
+    path = "/firmwares/download/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Firmware ID"),
+    ),
+    responses(
+        (status = 200, description = "Firmware binary file", content_type = "application/octet-stream"),
+        (status = 404, description = "Firmware not found", body = ErrorBody),
+    ),
+    tag = "Firmware",
+)]
 pub async fn download(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

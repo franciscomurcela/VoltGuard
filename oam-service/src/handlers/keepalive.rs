@@ -3,15 +3,16 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
     db::{self, AppState},
-    error::ApiError,
+    error::{ApiError, ErrorBody},
     models::sensor::PendingAction,
 };
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct KeepAliveResponse {
     pub action: PendingAction,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -20,6 +21,18 @@ pub struct KeepAliveResponse {
     pub download_link: Option<String>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/sensors/{id}/keepalive",
+    params(
+        ("id" = Uuid, Path, description = "Sensor ID"),
+    ),
+    responses(
+        (status = 200, description = "Keepalive acknowledged, returns pending action", body = KeepAliveResponse),
+        (status = 404, description = "Sensor not found", body = ErrorBody),
+    ),
+    tag = "Keepalive",
+)]
 pub async fn keepalive(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

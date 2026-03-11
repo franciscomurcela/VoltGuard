@@ -6,10 +6,24 @@ use uuid::Uuid;
 
 use crate::{
     db::{self, AppState},
-    error::ApiError,
+    error::{ApiError, ErrorBody},
     models::anomaly::{AnomalyInput, AnomalyLog},
 };
 
+#[utoipa::path(
+    post,
+    path = "/sensors/{id}/anomalies",
+    params(
+        ("id" = Uuid, Path, description = "Sensor ID"),
+    ),
+    request_body = AnomalyInput,
+    responses(
+        (status = 200, description = "Anomaly logged", body = AnomalyLog),
+        (status = 400, description = "Invalid input", body = ErrorBody),
+        (status = 404, description = "Sensor not found", body = ErrorBody),
+    ),
+    tag = "Anomalies",
+)]
 pub async fn report(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
