@@ -1,0 +1,368 @@
+openapi: 3.0.0
+info:
+  title: VoltGuard - Grid Observability API
+  description: "Plataforma Enterprise de observabilidade assíncrona. Ingestão massiva de telemetria, análise matemática via Machine Learning e gestão de governança da API."
+  version: 3.0.0
+servers:
+  - url: /v1
+
+# Exige o Token em todos os endpoints por defeito
+security:
+  - AppToken: []
+
+tags:
+  - name: 1. Ingestion Service
+    description: "Ingestão de dados para fila de processamento."
+  - name: 2. Job Tracking Service
+    description: "Consulta do estado de processamento assíncrono (Polling)."
+  - name: 3. Anomaly Registry Service
+    description: "Consulta paginada do histórico e detalhes de anomalias."
+  - name: 4. Model Management Service
+    description: "Configuração e calibração dos motores de IA (PyOD/Prophet)."
+  - name: 5. Webhook Management Service
+    description: "Gestão de subscrições para notificações assíncronas (Callbacks)."
+  - name: 6. Health & Metrics Service
+    description: "Monitorização do estado vital e métricas internas da própria API."
+  - name: 7. Token Management Service
+    description: "Camada de segurança e governança de acessos à API."
+
+paths:
+  # ----------------------------------------
+  # 1. INGESTION SERVICE
+  # ----------------------------------------
+  /measurements:
+    post:
+      tags:
+        - 1. Ingestion Service
+      summary: "Submeter lote de medições"
+      description: "Recebe um array de dados e inicia a deteção em background."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeasurementRequest'
+      responses:
+        '202':
+          description: "Accepted - Processamento em background iniciado."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementResponse'
+
+  # ----------------------------------------
+  # 2. JOB TRACKING SERVICE
+  # ----------------------------------------
+  /measurements/{measurement_id}:
+    get:
+      tags:
+        - 2. Job Tracking Service
+      summary: "Consultar estado do Job (Polling)"
+      description: "Verifica se os dados submetidos já foram analisados (raw -> analyzed)."
+      parameters:
+        - name: measurement_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: "OK - Estado atual retornado."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementStatus'
+        '404':
+          description: "Not Found - Job não encontrado."
+
+  # ----------------------------------------
+  # 3. ANOMALY REGISTRY SERVICE
+  # ----------------------------------------
+  /anomalies:
+    get:
+      tags:
+        - 3. Anomaly Registry Service
+      summary: "Listar todas as anomalias"
+      description: "Retorna a lista de anomalias com suporte a filtros e paginação."
+      parameters:
+        - name: source_id
+          in: query
+          description: "Filtrar por nó da grelha."
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: "OK - Lista paginada."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnomalySummary'
+
+  /anomalies/{anomaly_id}:
+    get:
+      tags:
+        - 3. Anomaly Registry Service
+      summary: "Detalhes exatos da anomalia"
+      description: "Exibe o relatório matemático justificando o motivo do alerta."
+      parameters:
+        - name: anomaly_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: "OK - Detalhes da anomalia."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnomalyDetail'
+        '404':
+          description: "Not Found."
+
+  # ----------------------------------------
+  # 4. MODEL MANAGEMENT SERVICE
+  # ----------------------------------------
+  /models/config:
+    get:
+      tags:
+        - 4. Model Management Service
+      summary: "Consultar calibração da IA"
+      description: "Devolve os parâmetros matemáticos atuais."
+      responses:
+        '200':
+          description: "OK - Configurações atuais."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConfig'
+    put:
+      tags:
+        - 4. Model Management Service
+      summary: "Atualizar calibração da IA"
+      description: "Permite aos Data Scientists ajustar a sensibilidade do Prophet/PyOD sem reiniciar a API."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelConfig'
+      responses:
+        '200':
+          description: "OK - Modelos recalibrados."
+
+  # ----------------------------------------
+  # 5. WEBHOOK MANAGEMENT SERVICE
+  # ----------------------------------------
+  /webhooks:
+    get:
+      tags:
+        - 5. Webhook Management Service
+      summary: "Listar subscrições ativas"
+      description: "Mostra quem está a escutar os eventos de anomalia."
+      responses:
+        '200':
+          description: "OK - Lista de webhooks."
+    post:
+      tags:
+        - 5. Webhook Management Service
+      summary: "Registar novo Webhook"
+      description: "Subscreve um serviço externo para receber callbacks automáticos."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookSubscription'
+      responses:
+        '201':
+          description: "Created - Webhook registado."
+
+  # ----------------------------------------
+  # 6. HEALTH & METRICS SERVICE
+  # ----------------------------------------
+  /health:
+    get:
+      tags:
+        - 6. Health & Metrics Service
+      summary: "Liveness Probe (Estado do Sistema)"
+      description: "Endpoint público (sem token) para balanceadores de carga verificarem se a API está viva."
+      security: [] # Remove a exigência de token APENAS nesta rota
+      responses:
+        '200':
+          description: "OK - Sistema operacional."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /metrics:
+    get:
+      tags:
+        - 6. Health & Metrics Service
+      summary: "Métricas Internas da API"
+      description: "Estatísticas de uso (ex: tempo de inferência) para dashboards (Grafana)."
+      responses:
+        '200':
+          description: "OK - Métricas exportadas."
+
+  # ----------------------------------------
+  # 7. TOKEN MANAGEMENT SERVICE
+  # ----------------------------------------
+  /auth/tokens:
+    post:
+      tags:
+        - 7. Token Management Service
+      summary: "Gerar novo App Token"
+      description: "Cria uma nova chave de acesso para um serviço (ex: Energy Composer)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '201':
+          description: "Created - Token gerado."
+          
+  /auth/tokens/{token_id}:
+    delete:
+      tags:
+        - 7. Token Management Service
+      summary: "Revogar Token"
+      description: "Invalida imediatamente o acesso de um token comprometido."
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: "No Content - Token revogado com sucesso."
+
+# ==========================================
+# DEFINIÇÕES GLOBAIS (Segurança e Schemas)
+# ==========================================
+components:
+  securitySchemes:
+    AppToken:
+      type: apiKey
+      in: header
+      name: X-App-Token
+      description: "Token de autenticação do serviço cliente (Ex: Energy Composer)."
+
+  schemas:
+    MetricData:
+      type: object
+      properties:
+        source_id:
+          type: string
+          example: "node_01"
+        timestamp:
+          type: string
+          format: date-time
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+          example:
+            cpu_usage: 95.5
+            power_draw: 120.2
+
+    MeasurementRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricData'
+
+    MeasurementResponse:
+      type: object
+      properties:
+        measurement_id:
+          type: string
+          example: "job_998877"
+        status:
+          type: string
+          example: "raw"
+
+    MeasurementStatus:
+      type: object
+      properties:
+        measurement_id:
+          type: string
+        status:
+          type: string
+          example: "analyzed"
+        anomalies_detected:
+          type: boolean
+          example: true
+
+    AnomalySummary:
+      type: object
+      properties:
+        anomaly_id:
+          type: string
+        source_id:
+          type: string
+
+    AnomalyDetail:
+      type: object
+      properties:
+        anomaly_id:
+          type: string
+        trigger_metrics:
+          type: object
+
+    ModelConfig:
+      type: object
+      properties:
+        prophet_uncertainty_interval:
+          type: number
+          example: 0.95
+        pyod_contamination_rate:
+          type: number
+          example: 0.05
+
+    WebhookSubscription:
+      type: object
+      properties:
+        target_url:
+          type: string
+          example: "https://composer.local/alerts"
+        event_type:
+          type: string
+          example: "anomaly_detected"
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "UP"
+        database:
+          type: string
+          example: "CONNECTED"
+
+    TokenRequest:
+      type: object
+      properties:
+        service_name:
+          type: string
+          example: "Energy Composer Production"
