@@ -7,24 +7,29 @@ pub mod sensors;
 use axum::{
     extract::DefaultBodyLimit,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
+use serde_json::{json, Value};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{db::AppState, openapi::ApiDoc};
 
-async fn health() -> axum::http::StatusCode {
-    axum::http::StatusCode::OK
+async fn health() -> Json<Value> {
+    Json(json!({ "status": "healthy" }))
 }
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(health))
         // Inventory
+        .route("/sensors/stats", get(sensors::stats))
         .route("/sensors", post(sensors::create).get(sensors::list))
-        .route("/sensors/:id", get(sensors::get_one).delete(sensors::delete))
+        .route(
+            "/sensors/:id",
+            get(sensors::get_one).patch(sensors::update).delete(sensors::delete),
+        )
         // Firmware management
         .route("/firmwares", post(firmware::upload).get(firmware::list))
         .route("/firmwares/download/:id", get(firmware::download))
