@@ -1,0 +1,14 @@
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.0
+
+# Async Task Queue
+celery==5.4.0
+redis==5.2.0
+
+# HTTP Client (para webhooks futuros)
+httpx==0.27.0
+
+# Utilities
+python-dateutil==2.9.0
