@@ -5,40 +5,52 @@ import logger from '../utils/logger.js'
 
 const LABEL = 'notification'
 
+// Auth token for the notification service (query param, not Bearer)
+const AUTH_TOKEN = process.env.NOTIFICATIONS_AUTH_TOKEN || 'your_secure_auth_token'
+const CLIENT_ID = process.env.COMPOSITOR_CLIENT_ID || 'energy_composer'
+
 // ─── Notification Endpoints ─────────────────────────────────────────────────
+// Real API: /v1/notifications with ?auth_token=...&client_id=...
 
 export async function getNotifications(req, params = {}) {
   return withRetry(async () => {
-    const url = getServiceUrl('notification', '/api/notifications')
+    const url = getServiceUrl('notification', '/v1/notifications')
     const res = await client.get(url, {
       headers: forwardHeaders(req),
       params: {
+        auth_token: AUTH_TOKEN,
+        client_id: CLIENT_ID,
         limit: params.limit || 20,
-        since: params.since || undefined,
-        type: params.type || undefined,
+        offset: params.offset || 0,
       },
     })
     return res.data
   }, { label: LABEL })
 }
 
-export async function getNotificationCount(req) {
+export async function getNotificationById(req, notificationId) {
   return withRetry(async () => {
-    const url = getServiceUrl('notification', '/api/notifications/count')
-    const res = await client.get(url, { headers: forwardHeaders(req) })
+    const url = getServiceUrl('notification', `/v1/notifications/${notificationId}`)
+    const res = await client.get(url, {
+      headers: forwardHeaders(req),
+      params: { auth_token: AUTH_TOKEN },
+    })
     return res.data
   }, { label: LABEL })
 }
 
-export async function markAsRead(req, notificationId) {
-  const url = getServiceUrl('notification', `/api/notifications/${notificationId}/read`)
-  const res = await client.put(url, {}, { headers: forwardHeaders(req) })
+export async function sendNotification(req, notificationData) {
+  const url = getServiceUrl('notification', '/v1/notifications')
+  const res = await client.post(url, notificationData, {
+    headers: forwardHeaders(req),
+    params: { auth_token: AUTH_TOKEN },
+  })
   return res.data
 }
 
 export async function getNotificationHealth() {
   try {
-    const url = getServiceUrl('notification', '/api/health')
+    const url = getServiceUrl('notification', '/health')
     const start = Date.now()
     const res = await client.get(url, { timeout: 3000 })
     const latency = Date.now() - start

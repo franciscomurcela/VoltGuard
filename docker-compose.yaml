@@ -1,13 +1,111 @@
 version: '3.8'
 
 services:
-  # MongoDB for Notifications Service
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH — Keycloak (shared across all services)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: voltguard-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+      - "9000:9000"
+    volumes:
+      - ./composer-service/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/8080 2>/dev/null && exit 0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+      
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Backend (SOA Gateway)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-backend:
+    build:
+      context: ./composer-service/backend
+      dockerfile: Dockerfile
+    container_name: voltguard-compositor-backend
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: iot-compositor
+      KEYCLOAK_CLIENT_ID: compositor-backend
+      KEYCLOAK_CLIENT_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
+      SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
+      OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
+      NOTIFICATION_SERVICE_URL: http://notifications-service:8083
+      ANOMALY_SERVICE_URL: ${ANOMALY_SERVICE_URL:-http://anomaly-service:8080}
+      PROXY_TIMEOUT_MS: 5000
+      PROXY_RETRY_COUNT: 2
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 200
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: http://localhost:3000
+      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}    # ← ADD
+      COMPOSITOR_CLIENT_ID: energy_composer                                            # ← ADD
+    ports:
+      - "8080:8080"
+    volumes:
+      - compositor-data:/app/data
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health/live"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Frontend (React + Nginx)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-frontend:
+    build:
+      context: ./composer-service/frontend
+      dockerfile: Dockerfile
+    container_name: voltguard-compositor-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      compositor-backend:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Database (MongoDB)
+  # ═══════════════════════════════════════════════════════════════════════════
+
   notifications-db:
     image: mongo:7.0
     container_name: voltguard-notifications-db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: notifications_password
+      MONGO_INITDB_ROOT_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications_password}
       MONGO_INITDB_DATABASE: notifications_db
     ports:
       - "27017:27017"
@@ -20,24 +118,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  # Notifications Service
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Service
+  # ═══════════════════════════════════════════════════════════════════════════
+
   notifications-service:
     build:
       context: ./notifications-service
       dockerfile: Dockerfile
     container_name: voltguard-notifications-service
     environment:
-      MONGODB_URL: mongodb://admin:notifications_password@notifications-db:27017
+      MONGODB_URL: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
       MONGODB_DATABASE: notifications_db
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8083
       AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      # Twilio
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
       TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
       TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-noreply@voltguard.com}
+      # SendGrid
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -47,9 +151,49 @@ services:
         condition: service_healthy
     networks:
       - voltguard-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Placeholder (uncomment when your colleague's service is ready)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # oam-service:
+  #   build:
+  #     context: ./oam-service
+  #     dockerfile: Dockerfile
+  #   container_name: voltguard-oam-service
+  #   ports:
+  #     - "8084:8080"
+  #   networks:
+  #     - voltguard-network
+  #   restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Placeholder (uncomment when your colleague's service is ready)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # anomaly-service:
+  #   build:
+  #     context: ./anomaly-service
+  #     dockerfile: Dockerfile
+  #   container_name: voltguard-anomaly-service
+  #   ports:
+  #     - "8085:8080"
+  #   networks:
+  #     - voltguard-network
+  #   restart: unless-stopped
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════
 
 volumes:
   notifications-db-data:
+  compositor-data:
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORK
+# ═══════════════════════════════════════════════════════════════════════════
 
 networks:
   voltguard-network:

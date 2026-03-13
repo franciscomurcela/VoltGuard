@@ -2,14 +2,13 @@ import * as notificationProxy from '../services/notificationProxy.js'
 
 /**
  * GET /api/notifications
- * Query params: limit, since, type
+ * Query params: limit, offset
  */
 export async function list(req, res, next) {
   try {
     const data = await notificationProxy.getNotifications(req, {
       limit: req.query.limit,
-      since: req.query.since,
-      type: req.query.type,
+      offset: req.query.offset,
     })
     res.json(data)
   } catch (err) {
@@ -18,11 +17,11 @@ export async function list(req, res, next) {
 }
 
 /**
- * GET /api/notifications/count
+ * GET /api/notifications/:id
  */
-export async function count(req, res, next) {
+export async function getById(req, res, next) {
   try {
-    const data = await notificationProxy.getNotificationCount(req)
+    const data = await notificationProxy.getNotificationById(req, req.params.id)
     res.json(data)
   } catch (err) {
     next(err)
@@ -30,12 +29,12 @@ export async function count(req, res, next) {
 }
 
 /**
- * PUT /api/notifications/:id/read
+ * POST /api/notifications
  */
-export async function markRead(req, res, next) {
+export async function send(req, res, next) {
   try {
-    const data = await notificationProxy.markAsRead(req, req.params.id)
-    res.json(data)
+    const data = await notificationProxy.sendNotification(req, req.body)
+    res.status(201).json(data)
   } catch (err) {
     next(err)
   }
