@@ -26,9 +26,9 @@ export async function getAnomalies(req, params = {}) {
 export async function getAnomalySummary(req) {
   return withRetry(async () => {
     const url = getServiceUrl('anomaly', '/api/anomalies/summary')
-    const res = await client.get(url, { headers: forwardHeaders(req) })
+    const res = await client.get(url, { headers: forwardHeaders(req), timeout: 2000 })
     return res.data
-  }, { label: LABEL })
+  }, { label: LABEL, retries: 0 })
 }
 
 export async function getAnomalyById(req, anomalyId) {

@@ -5,14 +5,10 @@ const STATUS_COLORS = {
   pending: 'var(--accent-blue)',
 }
 
-const TYPE_ICONS = {
-  temperature: '🌡️',
-  humidity: '💧',
-  gateway: '📡',
-  pressure: '⏲️',
-  actuator: '⚙️',
-  luminosity: '💡',
-  wind: '🌬️',
+const PENDING_ACTION_LABELS = {
+  UPDATE_FIRMWARE: 'FW Update',
+  REBOOT: 'Reboot',
+  CLEAR_ANOMALY: 'Clear Anomaly',
 }
 
 export default function DeviceTable({ devices = [], onDelete }) {
@@ -44,7 +40,7 @@ export default function DeviceTable({ devices = [], onDelete }) {
       <table>
         <thead>
           <tr>
-            {['Status', 'ID', 'Name', 'Type', 'District', 'IP Address', 'Firmware', 'Last Seen', ''].map((h) => (
+            {['Status', 'ID', 'Name', 'District', 'Pending Action', 'Firmware', 'Last Seen', ''].map((h) => (
               <th key={h}>{h}</th>
             ))}
           </tr>
@@ -72,7 +68,7 @@ export default function DeviceTable({ devices = [], onDelete }) {
               {/* ID */}
               <td>
                 <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  {device.id}
+                  {device.id ? device.id.slice(0, 8) + '…' : '—'}
                 </span>
               </td>
 
@@ -83,27 +79,36 @@ export default function DeviceTable({ devices = [], onDelete }) {
                 </span>
               </td>
 
-              {/* Type */}
-              <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                {TYPE_ICONS[device.type] || '📦'} {device.type}
-              </td>
-
               {/* District */}
               <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                 {device.district}
               </td>
 
-              {/* IP */}
+              {/* Pending Action */}
               <td>
-                <span className="mono" style={{ color: 'var(--text-faint)', fontSize: 12 }}>
-                  {device.ip}
-                </span>
+                {device.pendingAction ? (
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      padding: '2px 6px',
+                      background: 'rgba(234,179,8,0.12)',
+                      border: '1px solid rgba(234,179,8,0.2)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--accent-yellow)',
+                    }}
+                  >
+                    {PENDING_ACTION_LABELS[device.pendingAction] || device.pendingAction}
+                  </span>
+                ) : (
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)' }}>—</span>
+                )}
               </td>
 
               {/* Firmware */}
               <td>
                 <span className="mono" style={{ color: 'var(--text-ghost)', fontSize: 11 }}>
-                  {device.firmware}
+                  {device.firmware === 'none' ? '—' : device.firmware ? device.firmware.slice(0, 8) + '…' : '—'}
                 </span>
               </td>
 
@@ -116,7 +121,7 @@ export default function DeviceTable({ devices = [], onDelete }) {
                     color: device.status === 'active' ? 'var(--accent-green)' : 'var(--text-faint)',
                   }}
                 >
-                  {device.lastSeen}
+                  {device.lastSeen ? new Date(device.lastSeen).toLocaleString() : '—'}
                 </span>
               </td>
 

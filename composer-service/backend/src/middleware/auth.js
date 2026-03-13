@@ -1,17 +1,26 @@
 import keycloak from '../config/keycloak.js'
 import logger from '../utils/logger.js'
 
+const AUTH_DISABLED = process.env.AUTH_DISABLED === 'true'
+
+if (AUTH_DISABLED) {
+  logger.warn('AUTH_DISABLED=true — all auth checks bypassed (dev mode)')
+}
+
 /**
  * Require a valid Keycloak bearer token.
  * Attaches decoded token to req.kauth.grant
  */
-export const requireAuth = keycloak.protect()
+export const requireAuth = AUTH_DISABLED
+  ? (req, res, next) => next()
+  : keycloak.protect()
 
 /**
  * Require a specific realm or client role.
  * Usage: requireRole('admin') or requireRole('realm:admin')
  */
 export function requireRole(role) {
+  if (AUTH_DISABLED) return (req, res, next) => next()
   return keycloak.protect((token) => {
     // Check realm roles
     if (token.hasRealmRole(role)) return true

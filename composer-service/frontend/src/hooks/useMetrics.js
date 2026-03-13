@@ -86,7 +86,7 @@ function generateSparkline(length = 20) {
 // ─── End Mock ───────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL = 3000
-const USE_MOCK = true // flip to false once backend is wired
+const USE_MOCK = false
 
 export default function useMetrics() {
   const [metrics, setMetrics] = useState(null)

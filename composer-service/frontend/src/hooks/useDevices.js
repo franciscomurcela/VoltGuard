@@ -13,7 +13,7 @@ const MOCK_DEVICES = [
   { id: 'DEV-008', name: 'Sensor Vento Leiria', type: 'wind', district: 'Leiria', status: 'active', ip: '192.168.4.05', firmware: 'v2.2.0', lastSeen: '8s ago', registeredAt: '2025-03-20' },
 ]
 
-const USE_MOCK = true
+const USE_MOCK = false
 // ─── End Mock ───────────────────────────────────────────────────────────────
 
 export default function useDevices() {

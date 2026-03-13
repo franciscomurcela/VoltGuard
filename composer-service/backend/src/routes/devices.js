@@ -21,7 +21,7 @@ router.get('/:id', getDevice)
 
 // Write — admin role only
 router.post('/', requireRole('admin'), registerDevice)
-router.put('/:id', requireRole('admin'), modifyDevice)
+router.patch('/:id', requireRole('admin'), modifyDevice)
 router.delete('/:id', requireRole('admin'), removeDevice)
 
 export default router

@@ -1,7 +1,5 @@
 import { useState } from 'react'
 
-const DEVICE_TYPES = ['temperature', 'humidity', 'gateway', 'pressure', 'actuator', 'luminosity', 'wind']
-
 const DISTRICTS = [
   'Lisboa', 'Porto', 'Aveiro', 'Coimbra', 'Faro', 'Braga', 'Setúbal',
   'Évora', 'Viseu', 'Guarda', 'Bragança', 'Vila Real', 'Viana do Castelo',
@@ -10,10 +8,7 @@ const DISTRICTS = [
 
 const INITIAL_FORM = {
   name: '',
-  type: 'temperature',
   district: 'Lisboa',
-  ip: '',
-  firmware: 'v2.4.1',
 }
 
 export default function DeviceForm({ onSubmit, onCancel }) {
@@ -24,7 +19,7 @@ export default function DeviceForm({ onSubmit, onCancel }) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const isValid = form.name.trim() && form.ip.trim()
+  const isValid = form.name.trim()
 
   const handleSubmit = async () => {
     if (!isValid || submitting) return
@@ -77,30 +72,6 @@ export default function DeviceForm({ onSubmit, onCancel }) {
           />
         </div>
 
-        {/* IP Address */}
-        <div>
-          <label className="label" style={{ display: 'block', marginBottom: 5 }}>
-            IP Address
-          </label>
-          <input
-            value={form.ip}
-            onChange={(e) => updateField('ip', e.target.value)}
-            placeholder="192.168.x.x"
-          />
-        </div>
-
-        {/* Type */}
-        <div>
-          <label className="label" style={{ display: 'block', marginBottom: 5 }}>
-            Type
-          </label>
-          <select value={form.type} onChange={(e) => updateField('type', e.target.value)}>
-            {DEVICE_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-
         {/* District */}
         <div>
           <label className="label" style={{ display: 'block', marginBottom: 5 }}>
@@ -111,18 +82,6 @@ export default function DeviceForm({ onSubmit, onCancel }) {
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-        </div>
-
-        {/* Firmware */}
-        <div>
-          <label className="label" style={{ display: 'block', marginBottom: 5 }}>
-            Firmware Version
-          </label>
-          <input
-            value={form.firmware}
-            onChange={(e) => updateField('firmware', e.target.value)}
-            placeholder="v2.4.1"
-          />
         </div>
       </div>
 

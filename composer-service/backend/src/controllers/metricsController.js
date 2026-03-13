@@ -29,18 +29,20 @@ export async function getSummary(req, res, next) {
     // Compose the unified response.
     // Field names match what the frontend useMetrics hook expects.
     const metrics = {
-      // From OAM
-      totalRequests: oamData?.totalRequests ?? 0,
-      requestsPerSecond: oamData?.requestsPerSecond ?? 0,
-      totalDeployments: oamData?.totalDeployments ?? 0,
-      firewallActions: oamData?.firewallActions ?? {
-        total: 0, systemBlocks: 0, systemChallenges: 0, customWafBlocks: 0,
-      },
-      botManagement: oamData?.botManagement ?? { botsBlocked: 0, humansVerified: 0 },
-      aiGateway: oamData?.aiGateway ?? { requests: 0, avgLatency: 0 },
-      cache: oamData?.cache ?? { hitsServed: 0, hitRate: 0 },
-      devicesOnline: oamData?.devicesOnline ?? 0,
-      devicesTotal: oamData?.devicesTotal ?? 0,
+      // From OAM /sensors/stats
+      devicesOnline: oamData?.online ?? 0,
+      devicesTotal: oamData?.total ?? 0,
+      anomaliesDetected: oamData?.with_anomaly ?? 0,
+      devicesOffline: oamData?.offline ?? 0,
+
+      // Fields OAM doesn't provide — zero fallbacks
+      totalRequests: 0,
+      requestsPerSecond: 0,
+      totalDeployments: 0,
+      firewallActions: { total: 0, systemBlocks: 0, systemChallenges: 0, customWafBlocks: 0 },
+      botManagement: { botsBlocked: 0, humansVerified: 0 },
+      aiGateway: { requests: 0, avgLatency: 0 },
+      cache: { hitsServed: 0, hitRate: 0 },
 
       // From Anomaly
       anomalySummary: anomalyData ?? { total: 0, bySeverity: {}, trending: [] },
@@ -61,12 +63,18 @@ export async function getSummary(req, res, next) {
 
 /**
  * GET /api/districts/stats
- * Proxied from OAM — per-district request counts and rates.
+ * Proxied from OAM — per-district sensor counts.
+ * OAM returns { by_district: { Lisboa: 5, Porto: 3 } }
+ * We transform to [{ id, name, count }] sorted descending.
  */
 export async function getDistrictStats(req, res, next) {
   try {
     const data = await oam.getDistrictStats(req)
-    res.json(data)
+    const byDistrict = data?.by_district || {}
+    const result = Object.entries(byDistrict)
+      .map(([name, count]) => ({ id: name.toLowerCase().replace(/\s+/g, '_'), name, count }))
+      .sort((a, b) => b.count - a.count)
+    res.json(result)
   } catch (err) {
     next(err)
   }

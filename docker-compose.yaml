@@ -56,12 +56,15 @@ services:
       CORS_ORIGIN: http://localhost:3000
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}    # ← ADD
       COMPOSITOR_CLIENT_ID: energy_composer                                            # ← ADD
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
     ports:
       - "8080:8080"
     volumes:
       - compositor-data:/app/data
     depends_on:
       keycloak:
+        condition: service_healthy
+      oam-service:
         condition: service_healthy
     networks:
       - voltguard-network
@@ -114,9 +117,10 @@ services:
     networks:
       - voltguard-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.adminCommand({ping:1})' --quiet"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
+      start_period: 30s
       retries: 5
     restart: unless-stopped
 
@@ -154,19 +158,58 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # OAM — Placeholder (uncomment when your colleague's service is ready)
+  # OAM — Database (PostgreSQL)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # oam-service:
-  #   build:
-  #     context: ./oam-service
-  #     dockerfile: Dockerfile
-  #   container_name: voltguard-oam-service
-  #   ports:
-  #     - "8084:8080"
-  #   networks:
-  #     - voltguard-network
-  #   restart: unless-stopped
+  postgres-oam:
+    image: postgres:17-alpine
+    container_name: voltguard-postgres-oam
+    environment:
+      POSTGRES_USER: oam_user
+      POSTGRES_PASSWORD: ${OAM_DB_PASSWORD:-oam_pass}
+      POSTGRES_DB: oam_db
+    volumes:
+      - oam-postgres-data:/var/lib/postgresql/data
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Service (Rust / Axum)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  oam-service:
+    build:
+      context: ./oam-service
+      dockerfile: Dockerfile
+    container_name: voltguard-oam-service
+    environment:
+      DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
+      SERVER_ADDR: 0.0.0.0:8080
+      FIRMWARE_STORAGE_PATH: /app/firmware_storage
+      BASE_URL: ${OAM_BASE_URL:-http://localhost:8084}
+      RUST_LOG: ${LOG_LEVEL:-info}
+    volumes:
+      - oam-firmware-storage:/app/firmware_storage
+    ports:
+      - "8084:8080"
+    depends_on:
+      postgres-oam:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
   # ANOMALY — Placeholder (uncomment when your colleague's service is ready)
@@ -190,6 +233,8 @@ services:
 volumes:
   notifications-db-data:
   compositor-data:
+  oam-postgres-data:
+  oam-firmware-storage:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NETWORK

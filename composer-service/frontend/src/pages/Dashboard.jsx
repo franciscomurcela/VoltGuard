@@ -7,7 +7,7 @@ import ServiceBadge from '../components/services/ServiceBadge'
 const DISTRICT_COLORS = {
   lisboa: '#ef4444',
   porto: '#f97316',
-  setubal: '#eab308',
+  setúbal: '#eab308',
   aveiro: '#22c55e',
   faro: '#0ea5e9',
   braga: '#0ea5e9',
@@ -31,15 +31,7 @@ export default function Dashboard() {
   }
 
   // Top 7 districts for the sidebar ranking
-  const topDistricts = [...districts].sort((a, b) => b.requests - a.requests).slice(0, 7)
-
-  // Recent notifications (would come from Notification service)
-  const notifications = [
-    { msg: 'Device DEV-004 pressure anomaly in Faro', time: '2m ago', type: 'warn' },
-    { msg: 'OAM config sync completed successfully', time: '8m ago', type: 'ok' },
-    { msg: 'New device DEV-008 provisioned in Leiria', time: '15m ago', type: 'info' },
-    { msg: 'Anomaly model retrained — accuracy 97.2%', time: '32m ago', type: 'ok' },
-  ]
+  const topDistricts = [...districts].sort((a, b) => b.count - a.count).slice(0, 7)
 
   return (
     <div className="animate-fade-up">
@@ -56,21 +48,21 @@ export default function Dashboard() {
           overflow: 'hidden',
         }}
       >
-        {/* Left: Total requests + district ranking */}
+        {/* Left: Total sensors + district ranking */}
         <div style={{ padding: '32px 36px' }}>
-          <div className="label" style={{ marginBottom: 8 }}>Total Requests</div>
+          <div className="label" style={{ marginBottom: 8 }}>Total Sensors</div>
           <div
             className="mono"
             style={{ fontSize: 52, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: -2, lineHeight: 1 }}
           >
-            <AnimCounter target={metrics.totalRequests} />
+            <AnimCounter target={metrics.devicesTotal} />
           </div>
           <div className="mono" style={{ fontSize: 13, color: 'var(--text-faint)', marginTop: 6 }}>
-            {metrics.requestsPerSecond.toLocaleString()}/s
+            {metrics.devicesOnline} online · {metrics.devicesOffline} offline
           </div>
 
           <div style={{ marginTop: 32 }}>
-            <div className="label" style={{ marginBottom: 14 }}>Top Districts by Requests</div>
+            <div className="label" style={{ marginBottom: 14 }}>Top Districts by Sensors</div>
             {topDistricts.map((d, i) => (
               <div
                 key={d.id}
@@ -96,10 +88,7 @@ export default function Dashboard() {
                   {d.name}
                 </span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
-                  {d.requests.toLocaleString()}
-                </span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                  {d.rate.toLocaleString()}/s
+                  {d.count.toLocaleString()} sensors
                 </span>
               </div>
             ))}
@@ -142,16 +131,15 @@ export default function Dashboard() {
       {/* ─── Metric Cards ───────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         <StatCard
-          label="Total Deployments"
-          value={metrics.totalDeployments}
+          label="Total Sensors"
+          value={metrics.devicesTotal}
           sparkData={sparklines.requests}
           color="var(--accent-blue)"
           delay={0}
         />
         <StatCard
-          label="Firewall Actions"
-          value={metrics.firewallActions.total}
-          subtitle={`Blocks: ${metrics.firewallActions.systemBlocks.toLocaleString()} · WAF: ${metrics.firewallActions.customWafBlocks.toLocaleString()}`}
+          label="Anomalies Detected"
+          value={metrics.anomaliesDetected}
           sparkData={sparklines.firewall}
           color="var(--accent-orange)"
           delay={80}
@@ -165,16 +153,15 @@ export default function Dashboard() {
           delay={160}
         />
         <StatCard
-          label="Cache Hits Served"
-          value={metrics.cache.hitsServed}
-          subtitle={`${metrics.cache.hitRate}% hit rate`}
+          label="Devices Offline"
+          value={metrics.devicesOffline}
           sparkData={sparklines.cache}
           color="var(--accent-purple)"
           delay={240}
         />
       </div>
 
-      {/* ─── SOA Services + Notifications ───────────────────────────────── */}
+      {/* ─── SOA Services + Sensor Summary ──────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {/* Service Mesh */}
         <div className="card">
@@ -223,68 +210,45 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Security + Notifications */}
+        {/* Sensor Summary */}
         <div className="card">
-          <div className="label" style={{ marginBottom: 16 }}>Security & AI Gateway</div>
+          <div className="label" style={{ marginBottom: 16 }}>Sensor Summary</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            {/* Bot management */}
-            <div>
-              <div className="label" style={{ marginBottom: 8, fontSize: 9 }}>Bot Management</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Bots Blocked</span>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--accent-red)' }}>
-                  {metrics.botManagement.botsBlocked.toLocaleString()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Humans Verified</span>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--accent-green)' }}>
-                  {metrics.botManagement.humansVerified.toLocaleString()}
-                </span>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Registered</span>
+              <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {metrics.devicesTotal}
+              </span>
             </div>
 
-            {/* AI Gateway */}
-            <div>
-              <div className="label" style={{ marginBottom: 8, fontSize: 9 }}>AI Gateway</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Requests</span>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--accent-blue)' }}>
-                  {metrics.aiGateway.requests.toLocaleString()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Avg Latency</span>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--accent-yellow)' }}>
-                  {metrics.aiGateway.avgLatency}ms
-                </span>
-              </div>
-            </div>
-          </div>
+            <div
+              style={{
+                height: 1,
+                background: 'var(--border-muted)',
+              }}
+            />
 
-          {/* Notifications from Notification service */}
-          <div style={{ marginTop: 20 }}>
-            <div className="label" style={{ marginBottom: 10, fontSize: 9 }}>Recent Notifications</div>
-            {notifications.map((n, i) => {
-              const dotColor = n.type === 'warn' ? 'var(--accent-yellow)' : n.type === 'ok' ? 'var(--accent-green)' : 'var(--accent-blue)'
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '7px 0',
-                    borderBottom: '1px solid var(--border-muted)',
-                  }}
-                >
-                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1, lineHeight: 1.3 }}>{n.msg}</span>
-                  <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', flexShrink: 0 }}>{n.time}</span>
-                </div>
-              )
-            })}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Online</span>
+              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-green)' }}>
+                {metrics.devicesOnline}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Offline</span>
+              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-faint)' }}>
+                {metrics.devicesOffline}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>With Anomaly</span>
+              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-orange)' }}>
+                {metrics.anomaliesDetected}
+              </span>
+            </div>
           </div>
         </div>
       </div>

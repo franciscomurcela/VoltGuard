@@ -9,7 +9,7 @@ const LABEL = 'oam'
 
 export async function getAllDevices(req) {
   return withRetry(async () => {
-    const url = getServiceUrl('oam', '/api/devices')
+    const url = getServiceUrl('oam', '/sensors')
     const res = await client.get(url, { headers: forwardHeaders(req) })
     return res.data
   }, { label: LABEL })
@@ -17,7 +17,7 @@ export async function getAllDevices(req) {
 
 export async function getDeviceById(req, id) {
   return withRetry(async () => {
-    const url = getServiceUrl('oam', `/api/devices/${id}`)
+    const url = getServiceUrl('oam', `/sensors/${id}`)
     const res = await client.get(url, { headers: forwardHeaders(req) })
     return res.data
   }, { label: LABEL })
@@ -25,19 +25,19 @@ export async function getDeviceById(req, id) {
 
 export async function createDevice(req, deviceData) {
   // No retry on writes — idempotency not guaranteed
-  const url = getServiceUrl('oam', '/api/devices')
+  const url = getServiceUrl('oam', '/sensors')
   const res = await client.post(url, deviceData, { headers: forwardHeaders(req) })
   return res.data
 }
 
 export async function updateDevice(req, id, deviceData) {
-  const url = getServiceUrl('oam', `/api/devices/${id}`)
-  const res = await client.put(url, deviceData, { headers: forwardHeaders(req) })
+  const url = getServiceUrl('oam', `/sensors/${id}`)
+  const res = await client.patch(url, deviceData, { headers: forwardHeaders(req) })
   return res.data
 }
 
 export async function deleteDevice(req, id) {
-  const url = getServiceUrl('oam', `/api/devices/${id}`)
+  const url = getServiceUrl('oam', `/sensors/${id}`)
   const res = await client.delete(url, { headers: forwardHeaders(req) })
   return res.data
 }
@@ -46,7 +46,7 @@ export async function deleteDevice(req, id) {
 
 export async function getMetrics(req) {
   return withRetry(async () => {
-    const url = getServiceUrl('oam', '/api/metrics')
+    const url = getServiceUrl('oam', '/sensors/stats')
     const res = await client.get(url, { headers: forwardHeaders(req) })
     return res.data
   }, { label: LABEL })
@@ -54,7 +54,7 @@ export async function getMetrics(req) {
 
 export async function getDistrictStats(req) {
   return withRetry(async () => {
-    const url = getServiceUrl('oam', '/api/districts/stats')
+    const url = getServiceUrl('oam', '/sensors/stats')
     const res = await client.get(url, { headers: forwardHeaders(req) })
     return res.data
   }, { label: LABEL })
@@ -62,7 +62,7 @@ export async function getDistrictStats(req) {
 
 export async function getOamHealth() {
   try {
-    const url = getServiceUrl('oam', '/api/health')
+    const url = getServiceUrl('oam', '/health')
     const start = Date.now()
     const res = await client.get(url, { timeout: 3000 })
     const latency = Date.now() - start
