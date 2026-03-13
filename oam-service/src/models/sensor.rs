@@ -31,6 +31,7 @@ pub struct Sensor {
     pub current_firmware_id: Option<Uuid>,
     pub anomaly_status: AnomalyStatus,
     pub pending_action: PendingAction,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

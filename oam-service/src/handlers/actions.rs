@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     db::{self, AppState},
     error::{ApiError, ErrorBody},
-    models::sensor::{PendingAction, Sensor},
+    models::sensor::Sensor,
 };
 
 #[derive(Deserialize, ToSchema)]
@@ -40,14 +40,9 @@ pub async fn update_firmware(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Firmware '{}' not found", input.firmware_id)))?;
 
-    let sensor = db::sensors::set_pending_action(
-        &state.pool,
-        id,
-        PendingAction::UpdateFirmware,
-        Some(input.firmware_id),
-    )
-    .await?
-    .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
+    let sensor = db::sensors::schedule_firmware_update(&state.pool, id, input.firmware_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
 
     Ok(Json(sensor))
 }
@@ -68,14 +63,9 @@ pub async fn reboot(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Sensor>, ApiError> {
-    let sensor = db::sensors::set_pending_action(
-        &state.pool,
-        id,
-        PendingAction::Reboot,
-        None, // REBOOT clears any pending firmware
-    )
-    .await?
-    .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
+    let sensor = db::sensors::schedule_reboot(&state.pool, id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
 
     Ok(Json(sensor))
 }

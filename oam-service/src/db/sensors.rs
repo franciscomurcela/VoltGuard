@@ -4,7 +4,7 @@ use crate::db::DbPool;
 use crate::models::sensor::{AnomalyStatus, PendingAction, Sensor, SensorStats};
 
 const SELECT_FIELDS: &str =
-    "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action";
+    "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action, created_at";
 
 pub async fn insert(
     pool: &DbPool,
@@ -71,18 +71,33 @@ pub async fn delete(pool: &DbPool, id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(result.rows_affected() > 0)
 }
 
-pub async fn set_pending_action(
+/// Schedules a firmware update. Sets both the action and the target firmware.
+pub async fn schedule_firmware_update(
     pool: &DbPool,
     id: Uuid,
-    action: PendingAction,
-    firmware_id: Option<Uuid>,
+    firmware_id: Uuid,
 ) -> Result<Option<Sensor>, sqlx::Error> {
     sqlx::query_as::<_, Sensor>(&format!(
-        "UPDATE sensors SET pending_action = $1, pending_firmware_id = $2
-         WHERE id = $3 RETURNING {SELECT_FIELDS}"
+        "UPDATE sensors
+         SET pending_action = 'UPDATE_FIRMWARE', pending_firmware_id = $1
+         WHERE id = $2
+         RETURNING {SELECT_FIELDS}"
     ))
-    .bind(action)
     .bind(firmware_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Schedules a reboot. Does NOT touch pending_firmware_id — a queued firmware
+/// update stays intact so it can still be delivered on a subsequent keepalive.
+pub async fn schedule_reboot(pool: &DbPool, id: Uuid) -> Result<Option<Sensor>, sqlx::Error> {
+    sqlx::query_as::<_, Sensor>(&format!(
+        "UPDATE sensors
+         SET pending_action = 'REBOOT'
+         WHERE id = $1
+         RETURNING {SELECT_FIELDS}"
+    ))
     .bind(id)
     .fetch_optional(pool)
     .await

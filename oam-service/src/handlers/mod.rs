@@ -10,7 +10,7 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> Router {
         .route("/sensors/:id/keepalive", post(keepalive::keepalive))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive())
         .with_state(state);
 
     api.merge(
