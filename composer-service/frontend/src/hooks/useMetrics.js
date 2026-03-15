@@ -1,142 +1,153 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { metricsApi, healthApi } from '../services/api'
 
-// ─── Mock Data Generator (remove when backend is live) ──────────────────────
-function generateMockMetrics() {
-  const jitter = (base, pct = 0.05) => Math.floor(base * (1 + (Math.random() - 0.5) * 2 * pct))
+// ─── District name → map geo ID ──────────────────────────────────────────────
+const DISTRICT_NAME_TO_ID = {
+  'Viana do Castelo': 'viana',
+  'Braga':            'braga',
+  'Vila Real':        'vila_real',
+  'Bragança':         'braganca',
+  'Porto':            'porto',
+  'Aveiro':           'aveiro',
+  'Viseu':            'viseu',
+  'Guarda':           'guarda',
+  'Coimbra':          'coimbra',
+  'Castelo Branco':   'castelo_branco',
+  'Leiria':           'leiria',
+  'Santarém':         'santarem',
+  'Portalegre':       'portalegre',
+  'Lisboa':           'lisboa',
+  'Évora':            'evora',
+  'Setúbal':          'setubal',
+  'Beja':             'beja',
+  'Faro':             'faro',
+}
 
+function extractMetrics(data) {
   return {
-    totalRequests: jitter(45843266),
-    requestsPerSecond: jitter(172411),
-    totalDeployments: jitter(6120),
-    firewallActions: {
-      total: jitter(7507933),
-      systemBlocks: jitter(1398338),
-      systemChallenges: jitter(3171579),
-      customWafBlocks: jitter(328814),
-    },
-    botManagement: {
-      botsBlocked: jitter(415722),
-      humansVerified: jitter(2408348),
-    },
-    aiGateway: {
-      requests: jitter(24088),
-      avgLatency: jitter(142, 0.2),
-    },
-    cache: {
-      hitsServed: jitter(28953177),
-      hitRate: +(62 + Math.random() * 10).toFixed(1),
-    },
-    devicesOnline: jitter(2847),
-    devicesTotal: 3124,
+    devicesTotal:      data.devicesTotal      ?? 0,
+    devicesOnline:     data.devicesOnline     ?? 0,
+    devicesOffline:    data.devicesOffline    ?? 0,
+    anomaliesDetected: data.anomaliesDetected ?? 0,
   }
 }
 
-function generateMockDistricts() {
-  const base = [
-    { id: 'lisboa', name: 'Lisboa', requests: 12456789, rate: 48221 },
-    { id: 'porto', name: 'Porto', requests: 8945123, rate: 34108 },
-    { id: 'setubal', name: 'Setúbal', requests: 4567890, rate: 17542 },
-    { id: 'aveiro', name: 'Aveiro', requests: 3421890, rate: 13289 },
-    { id: 'faro', name: 'Faro', requests: 3210987, rate: 12198 },
-    { id: 'braga', name: 'Braga', requests: 2891045, rate: 10856 },
-    { id: 'coimbra', name: 'Coimbra', requests: 2134567, rate: 8312 },
-    { id: 'leiria', name: 'Leiria', requests: 1876543, rate: 7245 },
-    { id: 'viseu', name: 'Viseu', requests: 1567890, rate: 5932 },
-    { id: 'santarem', name: 'Santarém', requests: 1234567, rate: 4876 },
-    { id: 'evora', name: 'Évora', requests: 987654, rate: 3821 },
-    { id: 'viana', name: 'Viana do Castelo', requests: 1245032, rate: 4563 },
-    { id: 'vila_real', name: 'Vila Real', requests: 876543, rate: 3254 },
-    { id: 'castelo_branco', name: 'Castelo Branco', requests: 765432, rate: 2987 },
-    { id: 'beja', name: 'Beja', requests: 654321, rate: 2543 },
-    { id: 'braganca', name: 'Bragança', requests: 543210, rate: 2156 },
-    { id: 'guarda', name: 'Guarda', requests: 432156, rate: 1843 },
-    { id: 'portalegre', name: 'Portalegre', requests: 345678, rate: 1432 },
-  ]
-
-  return base.map((d) => ({
+function extractDistricts(data) {
+  if (!Array.isArray(data)) return []
+  return data.map((d) => ({
     ...d,
-    requests: Math.floor(d.requests * (1 + (Math.random() - 0.5) * 0.06)),
-    rate: Math.floor(d.rate * (1 + (Math.random() - 0.5) * 0.08)),
+    id: DISTRICT_NAME_TO_ID[d.name] ?? d.id,
   }))
 }
 
-function generateMockHealth() {
-  return {
-    compositor: { status: 'healthy', latency: 8 + Math.floor(Math.random() * 10) },
-    oam: { status: 'healthy', latency: 25 + Math.floor(Math.random() * 20) },
-    notification: { status: 'healthy', latency: 20 + Math.floor(Math.random() * 18) },
-    anomaly: {
-      status: Math.random() > 0.3 ? 'degraded' : 'healthy',
-      latency: 100 + Math.floor(Math.random() * 120),
-    },
-  }
-}
-
 function generateSparkline(length = 20) {
-  const data = []
+  const arr = []
   let val = 50 + Math.random() * 50
   for (let i = 0; i < length; i++) {
     val += (Math.random() - 0.48) * 15
     val = Math.max(10, Math.min(100, val))
-    data.push(Math.floor(val))
+    arr.push(Math.floor(val))
   }
-  return data
+  return arr
 }
-// ─── End Mock ───────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL = 3000
-const USE_MOCK = false
+const BASE_INTERVAL = 5000   // poll every 5s when healthy
+const MAX_INTERVAL  = 30000  // back off to 30s on repeated errors
 
 export default function useMetrics() {
-  const [metrics, setMetrics] = useState(null)
-  const [districts, setDistricts] = useState([])
+  const [metrics, setMetrics]             = useState(null)
+  const [districts, setDistricts]         = useState([])
   const [serviceHealth, setServiceHealth] = useState(null)
-  const [sparklines, setSparklines] = useState({
+  const [sparklines, setSparklines]       = useState({
     requests: generateSparkline(),
     firewall: generateSparkline(),
-    devices: generateSparkline(),
-    cache: generateSparkline(),
+    devices:  generateSparkline(),
+    cache:    generateSparkline(),
   })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const intervalRef = useRef(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
+
+  const intervalRef    = useRef(null)
+  const currentInterval = useRef(BASE_INTERVAL)
+  const errorCount     = useRef(0)
+
+  const scheduleNext = useCallback((success) => {
+    if (intervalRef.current) clearTimeout(intervalRef.current)
+
+    if (success) {
+      errorCount.current     = 0
+      currentInterval.current = BASE_INTERVAL
+    } else {
+      errorCount.current++
+      // Exponential backoff: 5s → 10s → 20s → 30s (cap)
+      currentInterval.current = Math.min(
+        BASE_INTERVAL * Math.pow(2, errorCount.current),
+        MAX_INTERVAL
+      )
+    }
+
+    intervalRef.current = setTimeout(fetchAll, currentInterval.current)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchAll = useCallback(async () => {
     try {
-      if (USE_MOCK) {
-        setMetrics(generateMockMetrics())
-        setDistricts(generateMockDistricts())
-        setServiceHealth(generateMockHealth())
+      const [summaryResult, districtsResult, healthResult] = await Promise.allSettled([
+        metricsApi.getSummary(),
+        metricsApi.getDistricts(),
+        healthApi.check(),
+      ])
+
+      let anySuccess = false
+
+      // ── Metrics ─────────────────────────────────────────────────────────
+      if (summaryResult.status === 'fulfilled') {
+        const m = extractMetrics(summaryResult.value.data)
+        setMetrics(m)
         setSparklines((prev) => ({
-          requests: [...prev.requests.slice(1), 30000 + Math.floor(Math.random() * 15000)],
-          firewall: [...prev.firewall.slice(1), 1200 + Math.floor(Math.random() * 800)],
-          devices: [...prev.devices.slice(1), 5000 + Math.floor(Math.random() * 3000)],
-          cache: [...prev.cache.slice(1), 4000 + Math.floor(Math.random() * 4000)],
+          requests: [...prev.requests.slice(1), m.devicesTotal],
+          firewall: [...prev.firewall.slice(1), m.anomaliesDetected],
+          devices:  [...prev.devices.slice(1),  m.devicesOnline],
+          cache:    [...prev.cache.slice(1),    m.devicesOffline],
         }))
+        setError(null)
+        anySuccess = true
       } else {
-        const [metricsRes, districtsRes, healthRes] = await Promise.all([
-          metricsApi.getSummary(),
-          metricsApi.getDistricts(),
-          healthApi.check(),
-        ])
-        setMetrics(metricsRes.data)
-        setDistricts(districtsRes.data)
-        setServiceHealth(healthRes.data)
+        console.error('[useMetrics] metrics fetch failed:', summaryResult.reason?.message)
+        setError(summaryResult.reason?.message ?? 'Failed to load metrics')
       }
-      setError(null)
+
+      // ── Districts ────────────────────────────────────────────────────────
+      if (districtsResult.status === 'fulfilled') {
+        setDistricts(extractDistricts(districtsResult.value.data))
+      }
+
+      // ── Health ───────────────────────────────────────────────────────────
+      if (healthResult.status === 'fulfilled') {
+        setServiceHealth(healthResult.value.data)
+      } else {
+        setServiceHealth({
+          compositor:   { status: 'unknown', latency: null },
+          oam:          { status: 'unknown', latency: null },
+          notification: { status: 'unknown', latency: null },
+          anomaly:      { status: 'unknown', latency: null },
+        })
+      }
+
+      scheduleNext(anySuccess)
     } catch (err) {
-      console.error('[useMetrics] Fetch failed:', err)
+      console.error('[useMetrics] unexpected error:', err)
       setError(err.message)
+      scheduleNext(false)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [scheduleNext])
 
   useEffect(() => {
     fetchAll()
-    intervalRef.current = setInterval(fetchAll, POLL_INTERVAL)
-    return () => clearInterval(intervalRef.current)
+    return () => {
+      if (intervalRef.current) clearTimeout(intervalRef.current)
+    }
   }, [fetchAll])
 
   return { metrics, districts, serviceHealth, sparklines, loading, error, refetch: fetchAll }

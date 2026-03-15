@@ -1,34 +1,48 @@
 import { useState, useEffect, useCallback } from 'react'
 import { devicesApi } from '../services/api'
 
-// ─── Mock Devices (remove when backend is live) ─────────────────────────────
-const MOCK_DEVICES = [
-  { id: 'DEV-001', name: 'Sensor Temperatura Lisboa', type: 'temperature', district: 'Lisboa', status: 'active', ip: '192.168.1.101', firmware: 'v2.4.1', lastSeen: '2s ago', registeredAt: '2025-01-15' },
-  { id: 'DEV-002', name: 'Sensor Humidade Porto', type: 'humidity', district: 'Porto', status: 'active', ip: '192.168.1.102', firmware: 'v2.4.1', lastSeen: '5s ago', registeredAt: '2025-01-18' },
-  { id: 'DEV-003', name: 'Gateway Aveiro Central', type: 'gateway', district: 'Aveiro', status: 'active', ip: '192.168.1.103', firmware: 'v3.1.0', lastSeen: '1s ago', registeredAt: '2025-02-02' },
-  { id: 'DEV-004', name: 'Sensor Pressão Faro', type: 'pressure', district: 'Faro', status: 'warning', ip: '192.168.2.15', firmware: 'v2.3.8', lastSeen: '45s ago', registeredAt: '2025-02-10' },
-  { id: 'DEV-005', name: 'Atuador Coimbra Norte', type: 'actuator', district: 'Coimbra', status: 'inactive', ip: '192.168.2.22', firmware: 'v1.9.2', lastSeen: '3h ago', registeredAt: '2025-03-01' },
-  { id: 'DEV-006', name: 'Sensor Luminosidade Braga', type: 'luminosity', district: 'Braga', status: 'active', ip: '192.168.3.10', firmware: 'v2.4.1', lastSeen: '3s ago', registeredAt: '2025-03-05' },
-  { id: 'DEV-007', name: 'Gateway Setúbal Sul', type: 'gateway', district: 'Setúbal', status: 'active', ip: '192.168.3.20', firmware: 'v3.1.0', lastSeen: '1s ago', registeredAt: '2025-03-12' },
-  { id: 'DEV-008', name: 'Sensor Vento Leiria', type: 'wind', district: 'Leiria', status: 'active', ip: '192.168.4.05', firmware: 'v2.2.0', lastSeen: '8s ago', registeredAt: '2025-03-20' },
-]
+// ─── Derive frontend status from OAM fields ───────────────────────────────────
+//
+// OAM Sensor has no "status" field. We compute it from:
+//   ultimo_keepalive   → online if within last 5 minutes (matches OAM stats query)
+//   anomaly_status     → 'DETECTED' means warning
+//   pending_action     → 'NONE' or action scheduled
+//
+// Priority: warning > active > pending > inactive
+//
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes — must match OAM stats query
 
-const USE_MOCK = false
-// ─── End Mock ───────────────────────────────────────────────────────────────
+function deriveStatus(sensor) {
+  const isOnline =
+    sensor.ultimo_keepalive &&
+    Date.now() - new Date(sensor.ultimo_keepalive).getTime() < ONLINE_THRESHOLD_MS
+
+  if (isOnline && sensor.anomaly_status === 'DETECTED') return 'warning'
+  if (isOnline) return 'active'
+  if (sensor.pending_action && sensor.pending_action !== 'NONE') return 'pending'
+  return 'inactive'
+}
+
+// Normalize raw OAM sensor into the shape the UI expects
+function normalize(sensor) {
+  return {
+    ...sensor,
+    status:        deriveStatus(sensor),
+    lastSeen:      sensor.ultimo_keepalive ?? null,
+    firmware:      sensor.current_firmware_id ?? 'none',
+    pendingAction: sensor.pending_action === 'NONE' ? null : sensor.pending_action,
+  }
+}
 
 export default function useDevices() {
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
 
   const fetchDevices = useCallback(async () => {
     try {
-      if (USE_MOCK) {
-        setDevices(MOCK_DEVICES)
-      } else {
-        const res = await devicesApi.getAll()
-        setDevices(res.data)
-      }
+      const res = await devicesApi.getAll()
+      setDevices((res.data ?? []).map(normalize))
       setError(null)
     } catch (err) {
       console.error('[useDevices] Fetch failed:', err)
@@ -38,42 +52,27 @@ export default function useDevices() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchDevices()
-  }, [fetchDevices])
+  useEffect(() => { fetchDevices() }, [fetchDevices])
 
   const createDevice = useCallback(async (deviceData) => {
     try {
-      if (USE_MOCK) {
-        const newDevice = {
-          ...deviceData,
-          id: `DEV-${String(devices.length + 1).padStart(3, '0')}`,
-          status: 'pending',
-          lastSeen: 'just now',
-          registeredAt: new Date().toISOString().split('T')[0],
-        }
-        setDevices((prev) => [newDevice, ...prev])
-        return newDevice
-      } else {
-        const res = await devicesApi.create(deviceData)
-        setDevices((prev) => [res.data, ...prev])
-        return res.data
-      }
+      const res = await devicesApi.create(deviceData)
+      const device = normalize(res.data)
+      setDevices((prev) => [device, ...prev])
+      return device
     } catch (err) {
       console.error('[useDevices] Create failed:', err)
       setError(err.message)
       throw err
     }
-  }, [devices.length])
+  }, [])
 
   const updateDevice = useCallback(async (id, data) => {
     try {
-      if (USE_MOCK) {
-        setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)))
-      } else {
-        await devicesApi.update(id, data)
-        setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)))
-      }
+      const res = await devicesApi.update(id, data)
+      const updated = normalize(res.data)
+      setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)))
+      return updated
     } catch (err) {
       console.error('[useDevices] Update failed:', err)
       setError(err.message)
@@ -83,12 +82,8 @@ export default function useDevices() {
 
   const deleteDevice = useCallback(async (id) => {
     try {
-      if (USE_MOCK) {
-        setDevices((prev) => prev.filter((d) => d.id !== id))
-      } else {
-        await devicesApi.delete(id)
-        setDevices((prev) => prev.filter((d) => d.id !== id))
-      }
+      await devicesApi.delete(id)
+      setDevices((prev) => prev.filter((d) => d.id !== id))
     } catch (err) {
       console.error('[useDevices] Delete failed:', err)
       setError(err.message)
@@ -97,11 +92,11 @@ export default function useDevices() {
   }, [])
 
   const stats = {
-    total: devices.length,
-    active: devices.filter((d) => d.status === 'active').length,
-    warning: devices.filter((d) => d.status === 'warning').length,
+    total:    devices.length,
+    active:   devices.filter((d) => d.status === 'active').length,
+    warning:  devices.filter((d) => d.status === 'warning').length,
     inactive: devices.filter((d) => d.status === 'inactive').length,
-    pending: devices.filter((d) => d.status === 'pending').length,
+    pending:  devices.filter((d) => d.status === 'pending').length,
   }
 
   return {

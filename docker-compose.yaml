@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # AUTH — Keycloak (shared across all services)
+  # AUTH — Keycloak
   # ═══════════════════════════════════════════════════════════════════════════
 
   keycloak:
@@ -14,11 +12,15 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_ADMIN: http://localhost:8081
+      KC_HTTP_ENABLED: "true"
     ports:
       - "8081:8080"
       - "9000:9000"
     volumes:
       - ./composer-service/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - keycloak-data:/opt/keycloak/data
     networks:
       - voltguard-network
     healthcheck:
@@ -27,9 +29,9 @@ services:
       timeout: 5s
       retries: 15
       start_period: 60s
-      
+
   # ═══════════════════════════════════════════════════════════════════════════
-  # COMPOSITOR — Backend (SOA Gateway)
+  # COMPOSITOR — Backend
   # ═══════════════════════════════════════════════════════════════════════════
 
   compositor-backend:
@@ -48,14 +50,17 @@ services:
       OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
       NOTIFICATION_SERVICE_URL: http://notifications-service:8083
       ANOMALY_SERVICE_URL: ${ANOMALY_SERVICE_URL:-http://anomaly-service:8080}
-      PROXY_TIMEOUT_MS: 5000
-      PROXY_RETRY_COUNT: 2
+      # Increased timeout so OAM has time to respond under DB load
+      PROXY_TIMEOUT_MS: 8000
+      # Reduced to 1 retry — 2 retries × 8s = 24s total wait, which is too long
+      PROXY_RETRY_COUNT: 1
+      PROXY_RETRY_DELAY_MS: 500
       RATE_LIMIT_WINDOW_MS: 60000
       RATE_LIMIT_MAX_REQUESTS: 200
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORS_ORIGIN: http://localhost:3000
-      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}    # ← ADD
-      COMPOSITOR_CLIENT_ID: energy_composer                                            # ← ADD
+      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      COMPOSITOR_CLIENT_ID: energy_composer
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
     ports:
       - "8080:8080"
@@ -77,7 +82,7 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # COMPOSITOR — Frontend (React + Nginx)
+  # COMPOSITOR — Frontend
   # ═══════════════════════════════════════════════════════════════════════════
 
   compositor-frontend:
@@ -100,7 +105,7 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # NOTIFICATIONS — Database (MongoDB)
+  # NOTIFICATIONS — Database
   # ═══════════════════════════════════════════════════════════════════════════
 
   notifications-db:
@@ -139,13 +144,11 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8083
       AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
-      # Twilio
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
       TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
       TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-noreply@voltguard.com}
-      # SendGrid
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -212,7 +215,7 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — Placeholder (uncomment when your colleague's service is ready)
+  # ANOMALY — Placeholder
   # ═══════════════════════════════════════════════════════════════════════════
 
   # anomaly-service:
@@ -231,6 +234,7 @@ services:
 # ═══════════════════════════════════════════════════════════════════════════
 
 volumes:
+  keycloak-data:
   notifications-db-data:
   compositor-data:
   oam-postgres-data:
