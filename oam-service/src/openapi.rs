@@ -8,7 +8,6 @@ use crate::{
         keepalive::KeepAliveResponse,
     },
     models::{
-        anomaly::{AnomalyInput, AnomalyLog},
         firmware::Firmware,
         sensor::{AnomalyStatus, PendingAction, Sensor, SensorInput, SensorPatch, SensorStats},
     },
@@ -35,7 +34,6 @@ use crate::{
     components(schemas(
         Sensor, SensorInput, SensorPatch, SensorStats, AnomalyStatus, PendingAction,
         Firmware, FirmwareUploadRequest,
-        AnomalyInput, AnomalyLog,
         KeepAliveResponse, ActionUpdateInput,
         ErrorBody,
     )),

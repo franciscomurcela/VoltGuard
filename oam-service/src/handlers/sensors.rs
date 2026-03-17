@@ -55,6 +55,7 @@ pub async fn create(
 #[utoipa::path(
     get,
     path = "/sensors",
+    operation_id = "list_sensors",
     params(
         ("page" = Option<i64>, Query, description = "Page number (default: 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (default: 10, max: 100)"),
@@ -69,7 +70,8 @@ pub async fn list(
     Query(params): Query<PaginationQuery>,
 ) -> Result<Json<Vec<Sensor>>, ApiError> {
     let limit = params.limit.unwrap_or(10).clamp(1, 100);
-    let offset = (params.page.unwrap_or(1) - 1) * limit;
+    let page = params.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * limit;
 
     let sensors = db::sensors::find_all(&state.pool, limit, offset).await?;
     Ok(Json(sensors))

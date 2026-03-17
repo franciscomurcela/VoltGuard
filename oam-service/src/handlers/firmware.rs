@@ -92,6 +92,7 @@ pub async fn upload(
 #[utoipa::path(
     get,
     path = "/firmwares",
+    operation_id = "list_firmwares",
     responses(
         (status = 200, description = "List of firmwares", body = Vec<Firmware>),
     ),

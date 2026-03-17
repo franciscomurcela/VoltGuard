@@ -41,21 +41,18 @@ pub async fn keepalive(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
 
-    let response = match pending.pending_action {
-        PendingAction::UpdateFirmware => {
-            let firmware_id = pending.pending_firmware_id.ok_or_else(|| {
-                ApiError::Internal("UPDATE_FIRMWARE action is missing firmware ID".to_string())
-            })?;
-            KeepAliveResponse {
-                action: PendingAction::UpdateFirmware,
-                target_firmware_id: Some(firmware_id),
-                download_link: Some(format!(
-                    "{}/firmwares/download/{}",
-                    state.base_url, firmware_id
-                )),
-            }
-        }
-        action => KeepAliveResponse {
+    // When a REBOOT is delivered, include firmware info if firmware was staged.
+    // The firmware is applied by the device during the reboot sequence.
+    let response = match (pending.pending_action, pending.pending_firmware_id) {
+        (PendingAction::Reboot, Some(firmware_id)) => KeepAliveResponse {
+            action: PendingAction::Reboot,
+            target_firmware_id: Some(firmware_id),
+            download_link: Some(format!(
+                "{}/firmwares/download/{}",
+                state.base_url, firmware_id
+            )),
+        },
+        (action, _) => KeepAliveResponse {
             action,
             target_firmware_id: None,
             download_link: None,

@@ -1,4 +1,3 @@
-pub mod anomalies;
 pub mod firmware;
 pub mod sensors;
 

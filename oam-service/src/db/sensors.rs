@@ -4,7 +4,8 @@ use crate::db::DbPool;
 use crate::models::sensor::{AnomalyStatus, PendingAction, Sensor, SensorStats};
 
 const SELECT_FIELDS: &str =
-    "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action, created_at";
+    "id, name, district, ultimo_keepalive, current_firmware_id, anomaly_status, pending_action, \
+     (pending_firmware_id IS NOT NULL) AS firmware_update_pending, created_at";
 
 pub async fn insert(
     pool: &DbPool,
@@ -71,7 +72,8 @@ pub async fn delete(pool: &DbPool, id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(result.rows_affected() > 0)
 }
 
-/// Schedules a firmware update. Sets both the action and the target firmware.
+/// Stages a firmware update on the sensor. Only sets `pending_firmware_id` —
+/// the firmware is applied when the sensor next reboots (via `schedule_reboot`).
 pub async fn schedule_firmware_update(
     pool: &DbPool,
     id: Uuid,
@@ -79,7 +81,7 @@ pub async fn schedule_firmware_update(
 ) -> Result<Option<Sensor>, sqlx::Error> {
     sqlx::query_as::<_, Sensor>(&format!(
         "UPDATE sensors
-         SET pending_action = 'UPDATE_FIRMWARE', pending_firmware_id = $1
+         SET pending_firmware_id = $1
          WHERE id = $2
          RETURNING {SELECT_FIELDS}"
     ))
@@ -126,17 +128,22 @@ pub async fn keepalive(pool: &DbPool, id: Uuid) -> Result<Option<PendingState>, 
         return Ok(None); // tx dropped here → implicit rollback
     }
 
-    // If delivering UPDATE_FIRMWARE, apply pending_firmware_id → current_firmware_id atomically
+    // On REBOOT delivery: if firmware was staged, promote pending_firmware_id → current_firmware_id
+    // and clear the staged firmware. On any other action: leave pending_firmware_id untouched.
     sqlx::query(
         "UPDATE sensors
-         SET ultimo_keepalive        = NOW(),
-             pending_action          = 'NONE',
-             current_firmware_id     = CASE
-                                         WHEN pending_action = 'UPDATE_FIRMWARE'
-                                         THEN pending_firmware_id
-                                         ELSE current_firmware_id
-                                       END,
-             pending_firmware_id     = NULL
+         SET ultimo_keepalive    = NOW(),
+             pending_action      = 'NONE',
+             current_firmware_id = CASE
+                                     WHEN pending_action = 'REBOOT' AND pending_firmware_id IS NOT NULL
+                                     THEN pending_firmware_id
+                                     ELSE current_firmware_id
+                                   END,
+             pending_firmware_id = CASE
+                                     WHEN pending_action = 'REBOOT'
+                                     THEN NULL
+                                     ELSE pending_firmware_id
+                                   END
          WHERE id = $1",
     )
     .bind(id)
@@ -145,6 +152,17 @@ pub async fn keepalive(pool: &DbPool, id: Uuid) -> Result<Option<PendingState>, 
 
     tx.commit().await?;
     Ok(state)
+}
+
+pub async fn mark_anomaly(pool: &DbPool, id: Uuid) -> Result<Option<Sensor>, sqlx::Error> {
+    sqlx::query_as::<_, Sensor>(&format!(
+        "UPDATE sensors SET anomaly_status = $1
+         WHERE id = $2 RETURNING {SELECT_FIELDS}"
+    ))
+    .bind(AnomalyStatus::Detected)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn clear_anomaly(pool: &DbPool, id: Uuid) -> Result<Option<Sensor>, sqlx::Error> {
