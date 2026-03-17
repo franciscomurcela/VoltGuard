@@ -43,7 +43,8 @@
 
 | Field | Type | Description |
 |---|---|---|
-| `error` | string | Error message |
+| `error` | string | Error category (e.g. `"Bad Request"`, `"Not Found"`) |
+| `message` | string | Human-readable detail |
 
 ---
 
@@ -79,6 +80,7 @@ Register a new sensor.
 **Response `201`** — created `Sensor`
 **Response `400`** — name or district is empty
 **Response `404`** — firmware_id not found
+**Response `409`** — sensor name already exists
 
 ---
 

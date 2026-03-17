@@ -16,7 +16,7 @@ impl Config {
             firmware_storage_path: env::var("FIRMWARE_STORAGE_PATH")
                 .unwrap_or_else(|_| "./firmware_storage".to_string()),
             base_url: env::var("BASE_URL")
-                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+                .unwrap_or_else(|_| "http://localhost:8084".to_string()),
         }
     }
 }
