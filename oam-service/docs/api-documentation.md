@@ -1,9 +1,6 @@
 # OAM Service — API Documentation
 
-**Base URL:** `http://localhost:8084`
-**Content-Type:** `application/json` (except firmware upload which uses `multipart/form-data`)
-**Authentication:** None (handled by the Compositor layer)
-**Interactive docs:** `http://localhost:8084/swagger-ui`
+**Base URL:** `http://localhost:8084/swagger-ui`
 
 ---
 
