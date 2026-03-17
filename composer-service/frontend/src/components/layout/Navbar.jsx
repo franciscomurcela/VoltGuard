@@ -4,6 +4,8 @@ import useAuth from '../../hooks/useAuth'
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: '◈' },
   { path: '/devices', label: 'Devices', icon: '◎' },
+  { path: '/anomalies', label: 'Anomalies', icon: '⚠' },
+  { path: '/notifications', label: 'Notifications', icon: '◆' },
 ]
 
 export default function Navbar() {

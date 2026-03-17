@@ -25,10 +25,11 @@ services:
       - voltguard-network
     healthcheck:
       test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/8080 2>/dev/null && exit 0 || exit 1"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
-      retries: 15
-      start_period: 60s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
   # COMPOSITOR — Backend
@@ -49,10 +50,8 @@ services:
       SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
       OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
       NOTIFICATION_SERVICE_URL: http://notifications-service:8083
-      ANOMALY_SERVICE_URL: ${ANOMALY_SERVICE_URL:-http://anomaly-service:8080}
-      # Increased timeout so OAM has time to respond under DB load
+      ANOMALY_SERVICE_URL: http://anomaly-api:8085
       PROXY_TIMEOUT_MS: 8000
-      # Reduced to 1 retry — 2 retries × 8s = 24s total wait, which is too long
       PROXY_RETRY_COUNT: 1
       PROXY_RETRY_DELAY_MS: 500
       RATE_LIMIT_WINDOW_MS: 60000
@@ -62,13 +61,12 @@ services:
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
+      ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
     ports:
       - "8080:8080"
     volumes:
       - compositor-data:/app/data
     depends_on:
-      keycloak:
-        condition: service_healthy
       oam-service:
         condition: service_healthy
     networks:
@@ -76,9 +74,9 @@ services:
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health/live"]
       interval: 15s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
+      timeout: 5s
+      start_period: 45s
+      retries: 5
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -215,19 +213,99 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — Placeholder
+  # ANOMALY — RabbitMQ (Message Broker)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # anomaly-service:
-  #   build:
-  #     context: ./anomaly-service
-  #     dockerfile: Dockerfile
-  #   container_name: voltguard-anomaly-service
-  #   ports:
-  #     - "8085:8080"
-  #   networks:
-  #     - voltguard-network
-  #   restart: unless-stopped
+  anomaly-rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: voltguard-anomaly-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-voltguard}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-voltguard123}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - anomaly-rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Redis (Result Backend)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-redis:
+    image: redis:7.2-alpine
+    container_name: voltguard-anomaly-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - anomaly-redis-data:/data
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — FastAPI (API)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-api:
+    build:
+      context: ./anomaly-detection
+      dockerfile: Dockerfile
+    container_name: voltguard-anomaly-api
+    environment:
+      REDIS_URL: redis://anomaly-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
+    ports:
+      - "8085:8085"
+    depends_on:
+      anomaly-redis:
+        condition: service_healthy
+      anomaly-rabbitmq:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8085/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Celery Worker (async job processor)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-worker:
+    build:
+      context: ./anomaly-detection
+      dockerfile: Dockerfile
+    container_name: voltguard-anomaly-worker
+    command: celery -A celery_config worker --loglevel=info --concurrency=2
+    environment:
+      REDIS_URL: redis://anomaly-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
+    depends_on:
+      anomaly-redis:
+        condition: service_healthy
+      anomaly-rabbitmq:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    restart: unless-stopped
 
 # ═══════════════════════════════════════════════════════════════════════════
 # VOLUMES
@@ -239,6 +317,8 @@ volumes:
   compositor-data:
   oam-postgres-data:
   oam-firmware-storage:
+  anomaly-rabbitmq-data:
+  anomaly-redis-data:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NETWORK

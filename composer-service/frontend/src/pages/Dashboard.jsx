@@ -1,21 +1,22 @@
 import useMetrics from '../hooks/useMetrics'
+import useAnomalies from '../hooks/useAnomalies'
 import PortugalMap from '../components/map/PortugalMap'
 import StatCard from '../components/metrics/StatCard'
-import AnimCounter from '../components/metrics/AnimCounter'
 import ServiceBadge from '../components/services/ServiceBadge'
 
 const DISTRICT_COLORS = {
   lisboa: '#ef4444',
   porto: '#f97316',
-  setúbal: '#eab308',
+  setubal: '#eab308',
   aveiro: '#22c55e',
   faro: '#0ea5e9',
-  braga: '#0ea5e9',
+  braga: '#3b82f6',
   coimbra: '#8b5cf6',
 }
 
 export default function Dashboard() {
   const { metrics, districts, serviceHealth, sparklines, loading } = useMetrics()
+  const { anomalies, summary: anomalySummary } = useAnomalies()
 
   if (loading || !metrics) {
     return (
@@ -30,12 +31,11 @@ export default function Dashboard() {
     )
   }
 
-  // Top 7 districts for the sidebar ranking
   const topDistricts = [...districts].sort((a, b) => b.count - a.count).slice(0, 7)
 
   return (
     <div className="animate-fade-up">
-      {/* ─── Hero: Stats + Map ──────────────────────────────────────────── */}
+      {/* ─── Hero: Sensor Summary + Map ─────────────────────────────────── */}
       <div
         style={{
           display: 'grid',
@@ -53,12 +53,12 @@ export default function Dashboard() {
           <div className="label" style={{ marginBottom: 8 }}>Total Sensors</div>
           <div
             className="mono"
-            style={{ fontSize: 52, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: -2, lineHeight: 1 }}
+            style={{ fontSize: 72, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: -2, lineHeight: 1 }}
           >
-            <AnimCounter target={metrics.devicesTotal} />
+            {metrics.devicesTotal}
           </div>
           <div className="mono" style={{ fontSize: 13, color: 'var(--text-faint)', marginTop: 6 }}>
-            {metrics.devicesOnline} online · {metrics.devicesOffline} offline
+            {metrics.devicesOnline} online · {metrics.devicesOffline ?? (metrics.devicesTotal - metrics.devicesOnline)} offline
           </div>
 
           <div style={{ marginTop: 32 }}>
@@ -84,11 +84,11 @@ export default function Dashboard() {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, width: 110 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, width: 140 }}>
                   {d.name}
                 </span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
-                  {d.count.toLocaleString()} sensors
+                  {d.count} sensor{d.count !== 1 ? 's' : ''}
                 </span>
               </div>
             ))}
@@ -139,7 +139,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Anomalies Detected"
-          value={metrics.anomaliesDetected}
+          value={metrics.anomaliesDetected ?? metrics.anomalySummary?.total_anomalies ?? 0}
           sparkData={sparklines.firewall}
           color="var(--accent-orange)"
           delay={80}
@@ -147,21 +147,21 @@ export default function Dashboard() {
         <StatCard
           label="Devices Online"
           value={metrics.devicesOnline}
-          subtitle={`of ${metrics.devicesTotal.toLocaleString()} registered`}
+          subtitle={`of ${metrics.devicesTotal} registered`}
           sparkData={sparklines.devices}
           color="var(--accent-green)"
           delay={160}
         />
         <StatCard
           label="Devices Offline"
-          value={metrics.devicesOffline}
+          value={metrics.devicesOffline ?? (metrics.devicesTotal - metrics.devicesOnline)}
           sparkData={sparklines.cache}
           color="var(--accent-purple)"
           delay={240}
         />
       </div>
 
-      {/* ─── SOA Services + Sensor Summary ──────────────────────────────── */}
+      {/* ─── SOA Services + Notifications ───────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {/* Service Mesh */}
         <div className="card">
@@ -188,68 +188,59 @@ export default function Dashboard() {
               latency={serviceHealth?.anomaly?.latency}
             />
           </div>
-
-          {/* Degradation alert */}
-          {serviceHealth?.anomaly?.status === 'degraded' && (
-            <div
-              style={{
-                marginTop: 16,
-                padding: '12px 14px',
-                background: 'var(--accent-yellow-dim)',
-                border: '1px solid rgba(234,179,8,0.18)',
-                borderRadius: 'var(--radius-md)',
-              }}
-            >
-              <div className="mono" style={{ fontSize: 11, color: 'var(--accent-yellow)', fontWeight: 500 }}>
-                ⚠ Anomaly Service Degraded
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                Latency spike detected · Model inference queue at high capacity
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Sensor Summary */}
+        {/* Anomaly Summary */}
         <div className="card">
-          <div className="label" style={{ marginBottom: 16 }}>Sensor Summary</div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Registered</span>
-              <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
-                {metrics.devicesTotal}
-              </span>
-            </div>
-
-            <div
-              style={{
-                height: 1,
-                background: 'var(--border-muted)',
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Online</span>
-              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-green)' }}>
-                {metrics.devicesOnline}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Offline</span>
-              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-faint)' }}>
-                {metrics.devicesOffline}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>With Anomaly</span>
-              <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--accent-orange)' }}>
-                {metrics.anomaliesDetected}
-              </span>
-            </div>
-          </div>
+          <div className="label" style={{ marginBottom: 16 }}>Anomaly Detection Summary</div>
+          {anomalySummary ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16 }}>
+                {[
+                  { label: 'Total Anomalies', value: anomalySummary.total_anomalies, color: 'var(--accent-red)' },
+                  { label: 'Jobs Completed', value: anomalySummary.jobs_completed, color: 'var(--accent-green)' },
+                  { label: 'Jobs Pending', value: anomalySummary.jobs_pending, color: 'var(--accent-yellow)' },
+                  { label: 'Jobs Failed', value: anomalySummary.jobs_failed, color: 'var(--text-faint)' },
+                ].map((s) => (
+                  <div key={s.label}>
+                    <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{s.value}</div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {anomalies.items?.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border-muted)', paddingTop: 12 }}>
+                  <div className="label" style={{ marginBottom: 8, fontSize: 9 }}>Latest Anomalies</div>
+                  {anomalies.items.slice(0, 3).map((a) => (
+                    <div key={a.anomaly_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-muted)' }}>
+                      <div style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: a.severity === 'high' || a.severity === 'critical' ? 'var(--accent-red)' : 'var(--accent-yellow)',
+                        flexShrink: 0,
+                      }} />
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1 }}>{a.source_id}</span>
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 9,
+                          color: a.severity === 'critical' ? 'var(--accent-red)' : a.severity === 'high' ? 'var(--accent-orange)' : 'var(--accent-yellow)',
+                          padding: '2px 6px',
+                          background: a.severity === 'critical' ? 'rgba(239,68,68,0.1)' : a.severity === 'high' ? 'rgba(249,115,22,0.1)' : 'rgba(234,179,8,0.1)',
+                          borderRadius: 'var(--radius-sm)',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        {a.severity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>No anomaly data available</div>
+          )}
         </div>
       </div>
     </div>

@@ -18,6 +18,8 @@ import deviceRoutes from './routes/devices.js'
 import metricsRoutes from './routes/metrics.js'
 import districtRoutes from './routes/districts.js'
 import notificationRoutes from './routes/notifications.js'
+import anomalyRoutes from './routes/anomalies.js'
+import firmwareRoutes from './routes/firmwares.js'
 
 const app = express()
 
@@ -52,6 +54,8 @@ app.use('/api/devices', deviceRoutes)
 app.use('/api/metrics', metricsRoutes)
 app.use('/api/districts', districtRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/anomalies', anomalyRoutes)
+app.use('/api/firmwares', firmwareRoutes)
 
 // ─── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

@@ -1,134 +1,95 @@
+import * as deviceService from '../services/deviceService.js'
 import * as oam from '../services/oamProxy.js'
+import { auditLog } from '../config/database.js'
+import { extractUser } from '../middleware/auth.js'
 import logger from '../utils/logger.js'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function handleError(res, err, context) {
-  const status = err.response?.status ?? 500
-  const message = err.response?.data?.message ?? err.message ?? 'Unexpected error'
-  logger.error({ context, status, message }, 'OAM proxy error')
-  res.status(status).json({ error: message })
-}
-
-// ─── Sensors ──────────────────────────────────────────────────────────────────
-
-export async function listDevices(req, res) {
+export async function listDevices(req, res, next) {
   try {
-    const data = await oam.getAllDevices(req)
+    const data = await deviceService.listDevices(req)
     res.json(data)
   } catch (err) {
-    handleError(res, err, 'listDevices')
+    next(err)
   }
 }
 
-export async function getDevice(req, res) {
+export async function getDevice(req, res, next) {
   try {
-    const data = await oam.getDeviceById(req, req.params.id)
+    const data = await deviceService.getDeviceById(req, req.params.id)
     res.json(data)
   } catch (err) {
-    handleError(res, err, 'getDevice')
+    next(err)
   }
 }
 
-export async function registerDevice(req, res) {
+export async function registerDevice(req, res, next) {
   try {
-    const data = await oam.createDevice(req, req.body)
+    const data = await deviceService.registerDevice(req, req.body)
     res.status(201).json(data)
   } catch (err) {
-    handleError(res, err, 'registerDevice')
+    next(err)
   }
 }
 
-export async function modifyDevice(req, res) {
+export async function modifyDevice(req, res, next) {
   try {
-    const data = await oam.updateDevice(req, req.params.id, req.body)
+    const data = await deviceService.updateDevice(req, req.params.id, req.body)
     res.json(data)
   } catch (err) {
-    handleError(res, err, 'modifyDevice')
+    next(err)
   }
 }
 
-export async function removeDevice(req, res) {
+export async function removeDevice(req, res, next) {
   try {
-    await oam.deleteDevice(req, req.params.id)
+    await deviceService.deleteDevice(req, req.params.id)
     res.status(204).end()
   } catch (err) {
-    handleError(res, err, 'removeDevice')
+    next(err)
   }
 }
 
-export async function deviceStats(req, res) {
+export async function deviceStats(req, res, next) {
   try {
-    const data = await oam.getMetrics(req)
-    res.json(data)
+    const stats = await deviceService.getDeviceStats(req)
+    res.json(stats)
   } catch (err) {
-    handleError(res, err, 'deviceStats')
+    next(err)
   }
 }
 
-// ─── Actions ──────────────────────────────────────────────────────────────────
-
-export async function actionReboot(req, res) {
+/**
+ * POST /api/devices/:id/actions
+ * Body: { action: "REBOOT" | "CLEAR_ANOMALY" | "FIRMWARE_UPDATE", firmware_id?: string }
+ * Proxies to OAM POST /sensors/:id/actions
+ */
+export async function dispatchAction(req, res, next) {
   try {
-    const data = await oam.scheduleReboot(req, req.params.id)
-    res.json(data)
-  } catch (err) {
-    handleError(res, err, 'actionReboot')
-  }
-}
+    const { id } = req.params
+    const { action, firmware_id } = req.body
 
-export async function actionUpdateFirmware(req, res) {
-  try {
-    const { firmware_id } = req.body
-    if (!firmware_id) {
-      return res.status(400).json({ error: 'firmware_id is required' })
+    if (!action) {
+      const err = new Error('action is required')
+      err.name = 'ValidationError'
+      throw err
     }
-    const data = await oam.scheduleFirmwareUpdate(req, req.params.id, firmware_id)
+
+    const data = await oam.dispatchSensorAction(req, id, { action, firmware_id })
+
+    const user = extractUser(req)
+    auditLog({
+      action: `DEVICE_ACTION:${action}`,
+      resource: 'device',
+      resourceId: id,
+      userId: user?.id,
+      userEmail: user?.email,
+      details: { action, firmware_id },
+      upstream: 'oam',
+    })
+
+    logger.info({ deviceId: id, action, by: user?.email }, 'Device action dispatched')
     res.json(data)
   } catch (err) {
-    handleError(res, err, 'actionUpdateFirmware')
-  }
-}
-
-export async function actionClearAnomaly(req, res) {
-  try {
-    const data = await oam.clearAnomaly(req, req.params.id)
-    res.json(data)
-  } catch (err) {
-    handleError(res, err, 'actionClearAnomaly')
-  }
-}
-
-// ─── Firmware ─────────────────────────────────────────────────────────────────
-
-export async function listFirmwares(req, res) {
-  try {
-    const data = await oam.getAllFirmwares(req)
-    res.json(data)
-  } catch (err) {
-    handleError(res, err, 'listFirmwares')
-  }
-}
-
-export async function uploadFirmware(req, res) {
-  try {
-    // Pass the raw request so oamProxy can stream the multipart body to OAM
-    const data = await oam.uploadFirmware(req)
-    res.status(201).json(data ?? { ok: true })
-  } catch (err) {
-    handleError(res, err, 'uploadFirmware')
-  }
-}
-
-export async function downloadFirmware(req, res) {
-  try {
-    const oamRes = await oam.downloadFirmware(req, req.params.id)
-    // Forward content headers from OAM then pipe the binary stream
-    res.setHeader('Content-Type', oamRes.headers['content-type'] ?? 'application/octet-stream')
-    const disposition = oamRes.headers['content-disposition']
-    if (disposition) res.setHeader('Content-Disposition', disposition)
-    oamRes.data.pipe(res)
-  } catch (err) {
-    handleError(res, err, 'downloadFirmware')
+    next(err)
   }
 }

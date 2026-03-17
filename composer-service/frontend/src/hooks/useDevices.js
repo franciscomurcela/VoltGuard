@@ -1,48 +1,51 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { devicesApi } from '../services/api'
 
-// ─── Derive frontend status from OAM fields ───────────────────────────────────
-//
-// OAM Sensor has no "status" field. We compute it from:
-//   ultimo_keepalive   → online if within last 5 minutes (matches OAM stats query)
-//   anomaly_status     → 'DETECTED' means warning
-//   pending_action     → 'NONE' or action scheduled
-//
-// Priority: warning > active > pending > inactive
-//
-const ONLINE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes — must match OAM stats query
+// ─── Mock Devices in OAM "sensor" format (remove when backend is live) ──────
+const MOCK_DEVICES = [
+  { id: 'S-001', name: 'Sensor Temperatura Lisboa', district: 'Lisboa', anomaly_status: 'NONE', ultimo_keepalive: '2s ago', current_firmware_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', pending_action: null },
+  { id: 'S-002', name: 'Sensor Humidade Porto', district: 'Porto', anomaly_status: 'NONE', ultimo_keepalive: '5s ago', current_firmware_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', pending_action: null },
+  { id: 'S-003', name: 'Gateway Aveiro Central', district: 'Aveiro', anomaly_status: 'NONE', ultimo_keepalive: '1s ago', current_firmware_id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', pending_action: null },
+  { id: 'S-004', name: 'Sensor Pressão Faro', district: 'Faro', anomaly_status: 'DETECTED', ultimo_keepalive: '45s ago', current_firmware_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', pending_action: 'FIRMWARE_UPDATE' },
+  { id: 'S-005', name: 'Atuador Coimbra Norte', district: 'Coimbra', anomaly_status: null, ultimo_keepalive: null, current_firmware_id: 'c3d4e5f6-a7b8-9012-cdef-123456789012', pending_action: 'RESTART' },
+  { id: 'S-006', name: 'Sensor Luminosidade Braga', district: 'Braga', anomaly_status: 'NONE', ultimo_keepalive: '3s ago', current_firmware_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', pending_action: null },
+  { id: 'S-007', name: 'Gateway Setúbal Sul', district: 'Setúbal', anomaly_status: 'NONE', ultimo_keepalive: '1s ago', current_firmware_id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', pending_action: null },
+  { id: 'S-008', name: 'Sensor Vento Leiria', district: 'Leiria', anomaly_status: 'NONE', ultimo_keepalive: '8s ago', current_firmware_id: 'd4e5f6a7-b8c9-0123-defa-234567890123', pending_action: null },
+]
 
-function deriveStatus(sensor) {
-  const isOnline =
-    sensor.ultimo_keepalive &&
-    Date.now() - new Date(sensor.ultimo_keepalive).getTime() < ONLINE_THRESHOLD_MS
+const USE_MOCK = false
+const POLL_INTERVAL = 5000 // refresh every 5 seconds
+// ─── End Mock ───────────────────────────────────────────────────────────────
 
-  if (isOnline && sensor.anomaly_status === 'DETECTED') return 'warning'
-  if (isOnline) return 'active'
-  if (sensor.pending_action && sensor.pending_action !== 'NONE') return 'pending'
-  return 'inactive'
-}
-
-// Normalize raw OAM sensor into the shape the UI expects
+// Normalize OAM sensor → frontend device (same logic as backend Device.js)
 function normalize(sensor) {
+  const statusMap = { NONE: 'active', DETECTED: 'warning' }
   return {
-    ...sensor,
-    status:        deriveStatus(sensor),
-    lastSeen:      sensor.ultimo_keepalive ?? null,
-    firmware:      sensor.current_firmware_id ?? 'none',
-    pendingAction: sensor.pending_action === 'NONE' ? null : sensor.pending_action,
+    id: sensor.id,
+    name: sensor.name,
+    district: sensor.district,
+    status: statusMap[sensor.anomaly_status?.toUpperCase()] || 'inactive',
+    firmware: sensor.current_firmware_id || null,
+    lastSeen: sensor.ultimo_keepalive || null,
+    pendingAction: sensor.pending_action || null,
   }
 }
 
 export default function useDevices() {
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
+  const [error, setError] = useState(null)
+  const intervalRef = useRef(null)
 
   const fetchDevices = useCallback(async () => {
     try {
-      const res = await devicesApi.getAll()
-      setDevices((res.data ?? []).map(normalize))
+      if (USE_MOCK) {
+        setDevices(MOCK_DEVICES.map(normalize))
+      } else {
+        const res = await devicesApi.getAll()
+        const data = Array.isArray(res.data) ? res.data : res.data?.sensors || res.data?.data || []
+        setDevices(data)
+      }
       setError(null)
     } catch (err) {
       console.error('[useDevices] Fetch failed:', err)
@@ -52,38 +55,47 @@ export default function useDevices() {
     }
   }, [])
 
-  useEffect(() => { fetchDevices() }, [fetchDevices])
+  // Poll for device updates
+  useEffect(() => {
+    fetchDevices()
+    intervalRef.current = setInterval(fetchDevices, POLL_INTERVAL)
+    return () => clearInterval(intervalRef.current)
+  }, [fetchDevices])
 
   const createDevice = useCallback(async (deviceData) => {
     try {
-      const res = await devicesApi.create(deviceData)
-      const device = normalize(res.data)
-      setDevices((prev) => [device, ...prev])
-      return device
+      if (USE_MOCK) {
+        const newSensor = {
+          id: `S-${String(devices.length + 1).padStart(3, '0')}`,
+          name: deviceData.name,
+          district: deviceData.district,
+          anomaly_status: null,
+          ultimo_keepalive: null,
+          current_firmware_id: deviceData.firmware_id || null,
+          pending_action: null,
+        }
+        setDevices((prev) => [normalize(newSensor), ...prev])
+        return normalize(newSensor)
+      } else {
+        const res = await devicesApi.create(deviceData)
+        setDevices((prev) => [res.data, ...prev])
+        return res.data
+      }
     } catch (err) {
       console.error('[useDevices] Create failed:', err)
       setError(err.message)
       throw err
     }
-  }, [])
-
-  const updateDevice = useCallback(async (id, data) => {
-    try {
-      const res = await devicesApi.update(id, data)
-      const updated = normalize(res.data)
-      setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)))
-      return updated
-    } catch (err) {
-      console.error('[useDevices] Update failed:', err)
-      setError(err.message)
-      throw err
-    }
-  }, [])
+  }, [devices.length])
 
   const deleteDevice = useCallback(async (id) => {
     try {
-      await devicesApi.delete(id)
-      setDevices((prev) => prev.filter((d) => d.id !== id))
+      if (USE_MOCK) {
+        setDevices((prev) => prev.filter((d) => d.id !== id))
+      } else {
+        await devicesApi.delete(id)
+        setDevices((prev) => prev.filter((d) => d.id !== id))
+      }
     } catch (err) {
       console.error('[useDevices] Delete failed:', err)
       setError(err.message)
@@ -91,13 +103,18 @@ export default function useDevices() {
     }
   }, [])
 
-  const stats = {
-    total:    devices.length,
-    active:   devices.filter((d) => d.status === 'active').length,
-    warning:  devices.filter((d) => d.status === 'warning').length,
-    inactive: devices.filter((d) => d.status === 'inactive').length,
-    pending:  devices.filter((d) => d.status === 'pending').length,
-  }
+  // Single-pass stats
+  const stats = devices.reduce(
+    (acc, d) => {
+      acc.total++
+      if (d.status === 'active') acc.active++
+      else if (d.status === 'warning') acc.warning++
+      else if (d.status === 'inactive') acc.inactive++
+      else if (d.status === 'pending') acc.pending++
+      return acc
+    },
+    { total: 0, active: 0, warning: 0, inactive: 0, pending: 0 }
+  )
 
   return {
     devices,
@@ -105,7 +122,6 @@ export default function useDevices() {
     loading,
     error,
     createDevice,
-    updateDevice,
     deleteDevice,
     refetch: fetchDevices,
   }

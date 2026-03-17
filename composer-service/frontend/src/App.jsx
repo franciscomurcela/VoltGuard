@@ -6,6 +6,8 @@ import Footer from './components/layout/Footer'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
+import Anomalies from './pages/Anomalies'
+import Notifications from './pages/Notifications'
 
 // ─── Auth Guard ─────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
@@ -33,6 +35,8 @@ function AppLayout() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/devices" element={<Devices />} />
+          <Route path="/anomalies" element={<Anomalies />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
