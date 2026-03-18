@@ -10,7 +10,7 @@ use crate::{
     },
     models::{
         firmware::Firmware,
-        sensor::{AnomalyStatus, PendingAction, Sensor, SensorInput, SensorPage, SensorPatch, SensorStats},
+        sensor::{AnomalyStatus, PendingAction, Sensor, SensorInput, SensorPatch, SensorStats},
     },
 };
 
@@ -34,7 +34,7 @@ use crate::{
         crate::handlers::keepalive::keepalive,
     ),
     components(schemas(
-        Sensor, SensorInput, SensorPage, SensorPatch, SensorStats, AnomalyStatus, PendingAction,
+        Sensor, SensorInput, SensorPatch, SensorStats, AnomalyStatus, PendingAction,
         Firmware, FirmwareUploadRequest,
         KeepAliveResponse, ActionUpdateInput,
         SensorImportRequest, ImportResult, ImportRowError,

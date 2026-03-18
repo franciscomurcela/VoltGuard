@@ -55,16 +55,6 @@ pub struct SensorPatch {
     pub district: Option<String>,
 }
 
-/// Paginated sensor list returned by `GET /sensors`.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct SensorPage {
-    pub data: Vec<Sensor>,
-    /// Total number of sensors (across all pages)
-    pub total: i64,
-    pub page: i64,
-    pub limit: i64,
-}
-
 /// Aggregate statistics across all sensors.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SensorStats {
