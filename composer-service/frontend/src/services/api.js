@@ -91,6 +91,8 @@ export const sensorActionsApi = {
   reboot: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'REBOOT' }),
   clearAnomaly: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'CLEAR_ANOMALY' }),
   updateFirmware: (deviceId, firmwareId) => api.post(`/devices/${deviceId}/actions`, { action: 'FIRMWARE_UPDATE', firmware_id: firmwareId }),
+  reportAnomaly: (deviceId, data) => api.post(`/devices/${deviceId}/anomalies`, data),
+  sendKeepalive: (deviceId, data) => api.post(`/devices/${deviceId}/keepalive`, data),
 }
 
 export const firmwaresApi = {

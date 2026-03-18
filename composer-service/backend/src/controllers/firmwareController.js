@@ -63,7 +63,7 @@ export async function downloadFirmware(req, res, next) {
     const { default: client, forwardHeaders } = await import('../utils/proxyClient.js')
     const { getServiceUrl } = await import('../utils/serviceDiscovery.js')
 
-    const url = getServiceUrl('oam', `/firmwares/${req.params.id}/download`)
+    const url = getServiceUrl('oam', `/firmwares/download/${req.params.id}`)
     const response = await client.get(url, {
       headers: forwardHeaders(req),
       responseType: 'stream',

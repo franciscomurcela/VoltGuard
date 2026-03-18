@@ -61,7 +61,7 @@ export async function deviceStats(req, res, next) {
 /**
  * POST /api/devices/:id/actions
  * Body: { action: "REBOOT" | "CLEAR_ANOMALY" | "FIRMWARE_UPDATE", firmware_id?: string }
- * Proxies to OAM POST /sensors/:id/actions
+ * Routes to the correct OAM endpoint per action type.
  */
 export async function dispatchAction(req, res, next) {
   try {
@@ -74,7 +74,28 @@ export async function dispatchAction(req, res, next) {
       throw err
     }
 
-    const data = await oam.dispatchSensorAction(req, id, { action, firmware_id })
+    let data
+    switch (action.toUpperCase()) {
+      case 'REBOOT':
+        data = await oam.rebootSensor(req, id)
+        break
+      case 'CLEAR_ANOMALY':
+        data = await oam.clearAnomalySensor(req, id)
+        break
+      case 'FIRMWARE_UPDATE':
+        if (!firmware_id) {
+          const err = new Error('firmware_id is required for FIRMWARE_UPDATE action')
+          err.name = 'ValidationError'
+          throw err
+        }
+        data = await oam.updateFirmwareSensor(req, id, firmware_id)
+        break
+      default: {
+        const err = new Error(`Unknown action: ${action}. Valid actions: REBOOT, CLEAR_ANOMALY, FIRMWARE_UPDATE`)
+        err.name = 'ValidationError'
+        throw err
+      }
+    }
 
     const user = extractUser(req)
     auditLog({
@@ -88,6 +109,33 @@ export async function dispatchAction(req, res, next) {
     })
 
     logger.info({ deviceId: id, action, by: user?.email }, 'Device action dispatched')
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/devices/:id/anomalies
+ * Body: anomaly data to report to OAM
+ */
+export async function reportAnomaly(req, res, next) {
+  try {
+    const data = await oam.reportAnomaly(req, req.params.id, req.body)
+    logger.info({ deviceId: req.params.id }, 'Anomaly reported to OAM')
+    res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/devices/:id/keepalive
+ * Forwards heartbeat to OAM, returns any pending actions
+ */
+export async function sendKeepalive(req, res, next) {
+  try {
+    const data = await oam.sendKeepalive(req, req.params.id, req.body)
     res.json(data)
   } catch (err) {
     next(err)

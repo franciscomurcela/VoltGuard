@@ -18,16 +18,33 @@ const POLL_INTERVAL = 5000 // refresh every 5 seconds
 // ─── End Mock ───────────────────────────────────────────────────────────────
 
 // Normalize OAM sensor → frontend device (same logic as backend Device.js)
+const STALE_THRESHOLD_MS = 120000 // 2 minutes
+
 function normalize(sensor) {
-  const statusMap = { NONE: 'active', DETECTED: 'warning' }
+  // Derive online status from ultimo_keepalive
+  let online = false
+  if (sensor.ultimo_keepalive) {
+    const lastSeen = new Date(sensor.ultimo_keepalive)
+    online = !isNaN(lastSeen.getTime()) && (Date.now() - lastSeen.getTime()) < STALE_THRESHOLD_MS
+  }
+
+  const anomaly = (sensor.anomaly_status || '').toUpperCase()
+  let status = 'inactive'
+  if (online && anomaly === 'DETECTED') status = 'warning'
+  else if (online) status = 'active'
+
   return {
     id: sensor.id,
     name: sensor.name,
     district: sensor.district,
-    status: statusMap[sensor.anomaly_status?.toUpperCase()] || 'inactive',
+    status,
+    anomalyStatus: sensor.anomaly_status || null,
     firmware: sensor.current_firmware_id || null,
     lastSeen: sensor.ultimo_keepalive || null,
-    pendingAction: sensor.pending_action || null,
+    pendingAction: sensor.pending_action && sensor.pending_action !== 'NONE'
+      ? sensor.pending_action
+      : null,
+    registeredAt: sensor.created_at || null,
   }
 }
 
@@ -103,14 +120,27 @@ export default function useDevices() {
     }
   }, [])
 
-  // Single-pass stats
+  // Single-pass stats — apply same stale logic as DeviceTable
+  const STALE_THRESHOLD_MS = 120000 // 2 minutes
   const stats = devices.reduce(
     (acc, d) => {
       acc.total++
-      if (d.status === 'active') acc.active++
-      else if (d.status === 'warning') acc.warning++
-      else if (d.status === 'inactive') acc.inactive++
-      else if (d.status === 'pending') acc.pending++
+
+      // Check if sensor is stale (no keepalive recently)
+      let effectiveStatus = d.status
+      if (d.status === 'active' && d.lastSeen) {
+        const lastDate = new Date(d.lastSeen)
+        if (!isNaN(lastDate.getTime()) && (Date.now() - lastDate.getTime()) > STALE_THRESHOLD_MS) {
+          effectiveStatus = 'inactive'
+        }
+      } else if (d.status === 'active' && !d.lastSeen) {
+        effectiveStatus = 'inactive'
+      }
+
+      if (effectiveStatus === 'active') acc.active++
+      else if (effectiveStatus === 'warning') acc.warning++
+      else if (effectiveStatus === 'inactive') acc.inactive++
+      else if (effectiveStatus === 'pending') acc.pending++
       return acc
     },
     { total: 0, active: 0, warning: 0, inactive: 0, pending: 0 }
@@ -124,5 +154,5 @@ export default function useDevices() {
     createDevice,
     deleteDevice,
     refetch: fetchDevices,
-  }
+}
 }

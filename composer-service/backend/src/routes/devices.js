@@ -8,6 +8,8 @@ import {
   removeDevice,
   deviceStats,
   dispatchAction,
+  reportAnomaly,
+  sendKeepalive,
 } from '../controllers/deviceController.js'
 
 const router = Router()
@@ -27,5 +29,11 @@ router.delete('/:id', requireRole('admin'), removeDevice)
 
 // Actions — admin role only
 router.post('/:id/actions', requireRole('admin'), dispatchAction)
+
+// Anomaly reporting (from anomaly detection service or manual)
+router.post('/:id/anomalies', requireRole('admin'), reportAnomaly)
+
+// Keepalive (heartbeat — could be called by sensors or simulator)
+router.post('/:id/keepalive', sendKeepalive)
 
 export default router

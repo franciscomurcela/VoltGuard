@@ -37,15 +37,16 @@ function timeAgo(value) {
 
 /**
  * Determine if a sensor should be considered "stale" (no keepalive recently).
+ * Used only for coloring the lastSeen text, NOT for overriding status.
  */
 function isStale(lastSeen, thresholdMs = 120000) {
   if (!lastSeen) return true
   const date = new Date(lastSeen)
-  if (isNaN(date.getTime())) return false // Can't parse, don't override
+  if (isNaN(date.getTime())) return false
   return (Date.now() - date.getTime()) > thresholdMs
 }
 
-export default function DeviceTable({ devices = [], onDelete }) {
+export default function DeviceTable({ devices = [], onDelete, onRowClick, selectedId }) {
   if (!devices.length) {
     return (
       <div
@@ -82,15 +83,20 @@ export default function DeviceTable({ devices = [], onDelete }) {
         <tbody>
           {devices.map((device, i) => {
             const stale = isStale(device.lastSeen)
-            // Override status to inactive if sensor hasn't been seen recently
-            const effectiveStatus = (device.status === 'active' && stale) ? 'inactive' : device.status
-            const statusColor = STATUS_COLORS[effectiveStatus] || 'var(--text-ghost)'
+            const statusColor = STATUS_COLORS[device.status] || 'var(--text-ghost)'
+            const isSelected = selectedId === device.id
 
             return (
             <tr
               key={device.id}
               className="animate-slide-left"
-              style={{ animationDelay: `${i * 40}ms` }}
+              style={{
+                animationDelay: `${i * 40}ms`,
+                cursor: onRowClick ? 'pointer' : 'default',
+                background: isSelected ? 'rgba(14,165,233,0.06)' : 'transparent',
+                borderLeft: isSelected ? '2px solid var(--accent-blue)' : '2px solid transparent',
+              }}
+              onClick={() => onRowClick?.(device.id)}
             >
               {/* Status dot */}
               <td>
@@ -139,7 +145,7 @@ export default function DeviceTable({ devices = [], onDelete }) {
                   className="mono"
                   style={{
                     fontSize: 11,
-                    color: effectiveStatus === 'active' ? 'var(--accent-green)' : stale ? 'var(--accent-red)' : 'var(--text-faint)',
+                    color: device.status === 'active' ? 'var(--accent-green)' : stale ? 'var(--accent-red)' : 'var(--text-faint)',
                   }}
                 >
                   {timeAgo(device.lastSeen)}
@@ -172,7 +178,7 @@ export default function DeviceTable({ devices = [], onDelete }) {
               <td style={{ textAlign: 'right' }}>
                 {onDelete && (
                   <button
-                    onClick={() => onDelete(device.id)}
+                    onClick={(e) => { e.stopPropagation(); onDelete(device.id) }}
                     style={{
                       padding: '3px 8px',
                       background: 'transparent',

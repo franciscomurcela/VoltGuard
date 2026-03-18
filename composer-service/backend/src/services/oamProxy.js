@@ -62,12 +62,39 @@ export async function getDistrictStats(req) {
   }, { label: LABEL })
 }
 
-// ─── Sensor Actions ─────────────────────────────────────────────────────────
+// ─── Sensor Actions (each action has its own endpoint) ──────────────────────
 
-export async function dispatchSensorAction(req, sensorId, actionData) {
-  // No retry on writes
-  const url = getServiceUrl('oam', `/sensors/${sensorId}/actions`)
-  const res = await client.post(url, actionData, { headers: forwardHeaders(req) })
+export async function rebootSensor(req, sensorId) {
+  const url = getServiceUrl('oam', `/sensors/${sensorId}/actions/reboot`)
+  const res = await client.post(url, {}, { headers: forwardHeaders(req) })
+  return res.data
+}
+
+export async function clearAnomalySensor(req, sensorId) {
+  const url = getServiceUrl('oam', `/sensors/${sensorId}/actions/clear-anomaly`)
+  const res = await client.post(url, {}, { headers: forwardHeaders(req) })
+  return res.data
+}
+
+export async function updateFirmwareSensor(req, sensorId, firmwareId) {
+  const url = getServiceUrl('oam', `/sensors/${sensorId}/actions/update-firmware`)
+  const res = await client.post(url, { firmware_id: firmwareId }, { headers: forwardHeaders(req) })
+  return res.data
+}
+
+// ─── Anomaly Reporting (sensor reports an anomaly to OAM) ───────────────────
+
+export async function reportAnomaly(req, sensorId, anomalyData) {
+  const url = getServiceUrl('oam', `/sensors/${sensorId}/anomalies`)
+  const res = await client.post(url, anomalyData, { headers: forwardHeaders(req) })
+  return res.data
+}
+
+// ─── Keepalive (sensor heartbeat + pending action delivery) ─────────────────
+
+export async function sendKeepalive(req, sensorId, keepaliveData) {
+  const url = getServiceUrl('oam', `/sensors/${sensorId}/keepalive`)
+  const res = await client.post(url, keepaliveData || {}, { headers: forwardHeaders(req) })
   return res.data
 }
 
@@ -94,7 +121,8 @@ export async function uploadFirmware(req, formData) {
 }
 
 export async function getFirmwareDownloadUrl(firmwareId) {
-  return getServiceUrl('oam', `/firmwares/${firmwareId}/download`)
+  // OAM path is /firmwares/download/{id} (not /firmwares/{id}/download)
+  return getServiceUrl('oam', `/firmwares/download/${firmwareId}`)
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ services:
     build:
       context: ./composer-service/backend
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-compositor-backend
     environment:
       PORT: 8080
@@ -87,6 +88,7 @@ services:
     build:
       context: ./composer-service/frontend
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-compositor-frontend
     ports:
       - "3000:80"
@@ -135,6 +137,7 @@ services:
     build:
       context: ./notifications-service
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-notifications-service
     environment:
       MONGODB_URL: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
@@ -188,6 +191,7 @@ services:
     build:
       context: ./oam-service
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-oam-service
     environment:
       DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
@@ -264,6 +268,7 @@ services:
     build:
       context: ./anomaly-detection
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-anomaly-api
     environment:
       REDIS_URL: redis://anomaly-redis:6379/0
@@ -293,6 +298,7 @@ services:
     build:
       context: ./anomaly-detection
       dockerfile: Dockerfile
+      network: host
     container_name: voltguard-anomaly-worker
     command: celery -A celery_config worker --loglevel=info --concurrency=2
     environment:
