@@ -24,6 +24,13 @@ pub async fn insert(
     .await
 }
 
+pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sensors")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
 pub async fn find_all(pool: &DbPool, limit: i64, offset: i64) -> Result<Vec<Sensor>, sqlx::Error> {
     sqlx::query_as::<_, Sensor>(&format!(
         "SELECT {SELECT_FIELDS} FROM sensors ORDER BY created_at DESC LIMIT $1 OFFSET $2"

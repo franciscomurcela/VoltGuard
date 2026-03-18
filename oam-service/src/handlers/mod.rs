@@ -25,6 +25,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         // Inventory
         .route("/sensors/stats", get(sensors::stats))
+        .route("/sensors/import", post(sensors::import))
         .route("/sensors", post(sensors::create).get(sensors::list))
         .route(
             "/sensors/:id",

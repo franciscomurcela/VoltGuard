@@ -19,6 +19,9 @@ pub enum AnomalyStatus {
 pub enum PendingAction {
     None,
     Reboot,
+    /// Retained for database enum compatibility only — never written or returned by the API.
+    /// Firmware updates are staged via `pending_firmware_id` and applied on `REBOOT`.
+    #[allow(dead_code)]
     UpdateFirmware,
 }
 
@@ -50,6 +53,16 @@ pub struct SensorInput {
 pub struct SensorPatch {
     pub name: Option<String>,
     pub district: Option<String>,
+}
+
+/// Paginated sensor list returned by `GET /sensors`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SensorPage {
+    pub data: Vec<Sensor>,
+    /// Total number of sensors (across all pages)
+    pub total: i64,
+    pub page: i64,
+    pub limit: i64,
 }
 
 /// Aggregate statistics across all sensors.

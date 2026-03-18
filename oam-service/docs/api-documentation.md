@@ -28,6 +28,15 @@
 | `version` | string | Version label (e.g. `v2.1.0`) |
 | `uploaded_at` | ISO 8601 | Upload timestamp |
 
+### SensorPage
+
+| Field | Type | Description |
+|---|---|---|
+| `data` | Sensor[] | Sensors for the current page |
+| `total` | integer | Total sensors across all pages |
+| `page` | integer | Current page number |
+| `limit` | integer | Page size used |
+
 ### KeepAliveResponse
 
 | Field | Type | Description |
@@ -89,23 +98,59 @@ List all sensors. Supports pagination.
 | `page` | 1 | — |
 | `limit` | 10 | 100 |
 
-**Response `200`** — array of `Sensor`
+**Response `200`** — `SensorPage`
 
 ```json
-[
-  {
-    "id": "fff2f6f4-8164-4d1c-9433-9eb844e0d02e",
-    "name": "CasaDoPovo",
-    "district": "Faro",
-    "anomaly_status": "NONE",
-    "pending_action": "NONE",
-    "firmware_update_pending": false,
-    "current_firmware_id": null,
-    "ultimo_keepalive": null,
-    "created_at": "2026-03-17T20:32:00.071199Z"
-  }
-]
+{
+  "data": [
+    {
+      "id": "fff2f6f4-8164-4d1c-9433-9eb844e0d02e",
+      "name": "CasaDoPovo",
+      "district": "Faro",
+      "anomaly_status": "NONE",
+      "pending_action": "NONE",
+      "firmware_update_pending": false,
+      "current_firmware_id": null,
+      "ultimo_keepalive": null,
+      "created_at": "2026-03-17T20:32:00.071199Z"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "limit": 10
+}
 ```
+
+---
+
+#### `POST /sensors/import`
+Bulk register sensors from a CSV file. Processes all rows — failures do not stop the import.
+
+**Form fields**
+
+| Field | Type | Description |
+|---|---|---|
+| `file` | CSV file | Columns: `name, district, firmware_id` |
+
+**CSV format** (header row optional, `firmware_id` optional per row):
+```
+name,district,firmware_id
+Sensor Lisboa Norte,Lisboa,95e0d152-b5a0-43e3-b888-7e71dfb4059a
+Sensor Porto Sul,Porto,
+Sensor Faro Centro,Faro
+```
+
+**Response `200`**
+```json
+{
+  "created": [ ...Sensor... ],
+  "failed": [
+    { "row": 2, "name": "Sensor Porto Sul", "reason": "name already exists" }
+  ]
+}
+```
+
+**Response `400`** — missing file field or invalid UTF-8
 
 ---
 
@@ -150,6 +195,7 @@ Update a sensor's `name` and/or `district`. Only provided fields are changed.
 **Response `200`** — updated `Sensor`
 **Response `400`** — empty name or district
 **Response `404`** — sensor not found
+**Response `409`** — name already taken
 
 ---
 
