@@ -1,9 +1,9 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    extract::{Multipart, Path, State},
+    http::StatusCode,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -36,12 +36,6 @@ pub struct ImportRowError {
 pub struct ImportResult {
     pub created: Vec<Sensor>,
     pub failed: Vec<ImportRowError>,
-}
-
-#[derive(Deserialize)]
-pub struct PaginationQuery {
-    pub page: Option<i64>,
-    pub limit: Option<i64>,
 }
 
 #[utoipa::path(
@@ -82,35 +76,14 @@ pub async fn create(
     get,
     path = "/sensors",
     operation_id = "list_sensors",
-    params(
-        ("page" = Option<i64>, Query, description = "Page number (default: 1)"),
-        ("limit" = Option<i64>, Query, description = "Items per page (default: 10, max: 100)"),
-    ),
     responses(
-        (status = 200, description = "List of sensors (total count in X-Total-Count header)", body = Vec<Sensor>),
+        (status = 200, description = "All sensors", body = Vec<Sensor>),
     ),
     tag = "Sensors",
 )]
-pub async fn list(
-    State(state): State<AppState>,
-    Query(params): Query<PaginationQuery>,
-) -> Result<(HeaderMap, Json<Vec<Sensor>>), ApiError> {
-    let limit = params.limit.unwrap_or(10).clamp(1, 100);
-    let page = params.page.unwrap_or(1).max(1);
-    let offset = (page - 1) * limit;
-
-    let (total, sensors) = tokio::try_join!(
-        db::sensors::count(&state.pool),
-        db::sensors::find_all(&state.pool, limit, offset),
-    )?;
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::HeaderName::from_static("x-total-count"),
-        HeaderValue::from(total),
-    );
-
-    Ok((headers, Json(sensors)))
+pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<Sensor>>, ApiError> {
+    let sensors = db::sensors::find_all(&state.pool).await?;
+    Ok(Json(sensors))
 }
 
 #[utoipa::path(
