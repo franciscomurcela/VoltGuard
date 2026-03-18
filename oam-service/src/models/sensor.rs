@@ -31,6 +31,9 @@ pub struct Sensor {
     pub current_firmware_id: Option<Uuid>,
     pub anomaly_status: AnomalyStatus,
     pub pending_action: PendingAction,
+    /// True when a firmware has been staged via the update-firmware action
+    /// but the sensor has not yet rebooted to apply it.
+    pub firmware_update_pending: bool,
     pub created_at: DateTime<Utc>,
 }
 

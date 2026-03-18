@@ -25,7 +25,7 @@ pub struct ActionUpdateInput {
     ),
     request_body = ActionUpdateInput,
     responses(
-        (status = 200, description = "Firmware update scheduled", body = Sensor),
+        (status = 200, description = "Firmware staged — will be applied on next reboot", body = Sensor),
         (status = 404, description = "Sensor or firmware not found", body = ErrorBody),
     ),
     tag = "Actions",
