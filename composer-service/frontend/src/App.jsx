@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
 import Anomalies from './pages/Anomalies'
 import Notifications from './pages/Notifications'
+import Preferences from './pages/Preferences'
 
 // ─── Auth Guard ─────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
@@ -49,9 +50,17 @@ function AppLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <ProtectedRoute>
-        <AppLayout />
-      </ProtectedRoute>
+      <Routes>
+        <Route path="/preferences" element={<Preferences />} />
+        <Route
+          path="*"
+          element={(
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>
     </BrowserRouter>
   )
 }

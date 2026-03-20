@@ -9,8 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 def _sanitize_preferences(doc: dict) -> dict:
+    targets = doc.get('targets', {})
     return {
         'user_id': doc.get('user_id'),
+        'target_email': targets.get('email', ''),
+        'target_phone': targets.get('sms', ''),
         'channels': doc.get('channels', {}),
         'alert_type': doc.get('alert_type', {}),
     }

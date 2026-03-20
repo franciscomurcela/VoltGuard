@@ -87,6 +87,11 @@ export const notificationsApi = {
   send: (data) => api.post('/notifications', data),
 }
 
+export const preferencesApi = {
+  getBySecret: (secret) => api.get('/public/preferences', { params: { secret } }),
+  patchBySecret: (secret, data) => api.patch('/public/preferences', data, { params: { secret } }),
+}
+
 export const sensorActionsApi = {
   reboot: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'REBOOT' }),
   clearAnomaly: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'CLEAR_ANOMALY' }),

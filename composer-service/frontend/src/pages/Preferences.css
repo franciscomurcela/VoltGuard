@@ -1,0 +1,242 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Russo+One&display=swap');
+
+.prefs-page {
+  min-height: 100vh;
+  background: #555;
+  color: #f3f3f3;
+  font-family: 'Roboto Mono', monospace;
+}
+
+.prefs-header {
+  background: #43b9cd;
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prefs-header h1 {
+  margin: 0;
+  font-size: 50px;
+  letter-spacing: 1px;
+  line-height: 1;
+  color: #f4f4f4;
+  font-family: 'Russo One', sans-serif;
+}
+
+.prefs-main {
+  padding: 18px 16px 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.prefs-card {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.prefs-section {
+  width: 100%;
+  text-align: center;
+}
+
+.prefs-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 22px;
+  color: #eeeeee;
+}
+
+.prefs-pill {
+  width: fit-content;
+  min-width: 320px;
+  margin: 0 auto;
+  background: #d9d9d9;
+  color: #767676;
+  font-size: 20px;
+  border-radius: 16px;
+  padding: 8px 18px;
+  font-weight: 700;
+}
+
+.prefs-hint {
+  margin-top: 10px;
+  color: #bababa;
+  font-size: 14px;
+}
+
+.prefs-section h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  color: #ececec;
+}
+
+.prefs-channels-grid {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+}
+
+.prefs-channel-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.prefs-channel-item span {
+  font-size: 18px;
+  color: #ededed;
+}
+
+.prefs-checkbox {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prefs-checkbox input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.prefs-checkbox-mark {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d9d9d9;
+  background: #dedede;
+  display: inline-block;
+  position: relative;
+}
+
+.prefs-checkbox input:checked + .prefs-checkbox-mark::after {
+  content: '✕';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.prefs-mode-row {
+  display: flex;
+  justify-content: center;
+  gap: 36px;
+}
+
+.prefs-radio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.prefs-radio span {
+  font-size: 18px;
+}
+
+.prefs-radio input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.prefs-radio-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #d9d9d9;
+  background: #e3e3e3;
+  display: inline-block;
+  position: relative;
+}
+
+.prefs-radio input:checked + .prefs-radio-mark::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #39b8cd;
+  position: absolute;
+  top: 4px;
+  left: 4px;
+}
+
+.prefs-submit {
+  min-width: 128px;
+  border-radius: 22px;
+  border: none;
+  padding: 8px 20px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #f8f8f8;
+  background: #43b9cd;
+}
+
+.prefs-submit:disabled {
+  opacity: 0.7;
+}
+
+.prefs-error {
+  color: #ffc5c5;
+  font-size: 14px;
+  text-align: center;
+}
+
+.prefs-success {
+  color: #b9ffd2;
+  font-size: 14px;
+  text-align: center;
+}
+
+.prefs-status {
+  color: #e6e6e6;
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .prefs-header h1 {
+    font-size: 40px;
+  }
+
+  .prefs-label {
+    font-size: 20px;
+  }
+
+  .prefs-pill {
+    min-width: 260px;
+    font-size: 18px;
+  }
+
+  .prefs-hint {
+    font-size: 13px;
+  }
+
+  .prefs-section h2 {
+    font-size: 22px;
+  }
+
+  .prefs-channel-item span,
+  .prefs-radio span {
+    font-size: 18px;
+  }
+
+  .prefs-submit {
+    font-size: 22px;
+  }
+}
