@@ -31,6 +31,18 @@ def v1_preferences_get(secret):  # noqa: E501
     return _sanitize_preferences(doc), 200
 
 
+def v1_preferences_by_user_id_get(user_id):  # noqa: E501
+    """GET /v1/preferences/by-user/{user_id} — fetch current preferences by user id."""
+    if not user_id:
+        return {'error': {'message': 'user_id is required', 'type': 'validation_error', 'code': 400}}, 400
+
+    db = get_db()
+    doc = db.user_preferences.find_one({'user_id': user_id})
+    if not doc:
+        return {'error': {'message': 'Preferences not found for provided user_id', 'type': 'not_found', 'code': 404}}, 404
+    return _sanitize_preferences(doc), 200
+
+
 def v1_preferences_patch(secret, body=None):  # noqa: E501
     """PATCH /v1/preferences — update selected preference fields."""
     if not secret:

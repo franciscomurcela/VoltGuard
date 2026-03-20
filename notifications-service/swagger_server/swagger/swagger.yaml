@@ -170,6 +170,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/PreferencesResponse'
 
+  /v1/preferences/by-user/{user_id}:
+    get:
+      summary: Consultar preferências atuais por user_id
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_by_user_id_get
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Identificador único do utilizador.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Retorna as preferências do utilizador.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
   /health:
     get:
       summary: Health check

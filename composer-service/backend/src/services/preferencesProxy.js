@@ -13,6 +13,14 @@ export async function getPreferences(secret) {
   }, { label: LABEL })
 }
 
+export async function getPreferencesByUserId(userId) {
+  return withRetry(async () => {
+    const url = getServiceUrl('notification', `/v1/preferences/by-user/${encodeURIComponent(userId)}`)
+    const res = await client.get(url)
+    return res.data
+  }, { label: LABEL })
+}
+
 export async function patchPreferences(secret, payload) {
   return withRetry(async () => {
     const url = getServiceUrl('notification', '/v1/preferences')
