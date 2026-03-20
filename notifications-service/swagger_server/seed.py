@@ -12,8 +12,8 @@ def seed_default_preferences(db):
             'secret': 'pref_secret_joao_silva',
             'user_id': 'op_joao_silva',
             'targets': {
-                'sms': '+351910000000',
-                'email': 'joao.silva@voltguard.local',
+                'sms': '+351935586638',
+                'email': 'franciscomurcela0@gmail.com',
             },
             'channels': {
                 'sms': True,
@@ -21,7 +21,7 @@ def seed_default_preferences(db):
             },
             'alert_type': {
                 'critical': 'immediate',
-                'warnings': 'digest',
+                'warnings': 'immediate',
             },
             'updated_at': now,
         },
@@ -29,12 +29,12 @@ def seed_default_preferences(db):
             'secret': 'pref_secret_maria_costa',
             'user_id': 'op_maria_costa',
             'targets': {
-                'sms': '+351910000001',
-                'email': 'maria.costa@voltguard.local',
+                'sms': '+351935586638',
+                'email': 'boomchico7@gmail.com',
             },
             'channels': {
                 'sms': True,
-                'email': False,
+                'email': True,
             },
             'alert_type': {
                 'critical': 'immediate',
