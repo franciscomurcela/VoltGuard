@@ -47,6 +47,7 @@ O serviço suporta seed de user_preferences para ambientes de desenvolvimento/te
 - POST /v1/notifications
 - GET /v1/notifications
 - GET /v1/notifications/{id}
+- POST /v1/digest/process
 - POST /v1/channels
 - GET /v1/preferences
 - PATCH /v1/preferences
@@ -169,6 +170,57 @@ Linux/macOS com parâmetros opcionais:
 SEVERITY=CRITICAL ALERT_TYPE=warnings METRIC_NAME=current VALUE=912.6 bash ./scripts/simulate-notification.sh op_joao_silva
 ```
 
+### 7) Trigger manual de digest (ambiente local)
+Pré-condições para funcionamento:
+- A preferência do utilizador para o tipo de alerta em causa deve estar em `digest`.
+- Têm de existir mensagens na `digest_queue` com estado `QUEUED_FOR_DIGEST`.
+
+Pré-visualização sem envio (`dry_run`):
+```bash
+curl -s -X POST "http://localhost:8083/v1/digest/process?auth_token=your_secure_auth_token" \
+  -H "Content-Type: application/json" \
+  -d '{"batch_size":50,"dry_run":true}'
+```
+
+Execução real de um lote:
+```bash
+curl -s -X POST "http://localhost:8083/v1/digest/process?auth_token=your_secure_auth_token" \
+  -H "Content-Type: application/json" \
+  -d '{"batch_size":50,"dry_run":false}'
+```
+
+Notas:
+- O trigger processa apenas registos com estado `QUEUED_FOR_DIGEST`.
+- `batch_size` aceite: 1 a 500.
+- O endpoint foi desenhado para uso manual em desenvolvimento e para futura integração com scheduler em produção.
+
+### 8) Trigger de digest com scripts utilitários
+Scripts disponíveis na raiz do repositório:
+- scripts/process-digest.ps1
+- scripts/process-digest.sh
+
+Nota: estes scripts só enviam notificações se as pré-condições acima forem cumpridas.
+
+PowerShell (Windows) — pré-visualização sem envio:
+```powershell
+.\scripts\process-digest.ps1
+```
+
+PowerShell (Windows) — execução real:
+```powershell
+.\scripts\process-digest.ps1 -DryRun:$false -BatchSize 100 -AuthToken "your_secure_auth_token"
+```
+
+Linux/macOS — pré-visualização sem envio:
+```bash
+bash ./scripts/process-digest.sh
+```
+
+Linux/macOS — execução real:
+```bash
+DRY_RUN=false BATCH_SIZE=100 AUTH_TOKEN=your_secure_auth_token bash ./scripts/process-digest.sh
+```
+
 ## Diagnóstico rápido
 
 ### 401 Unauthorized
@@ -190,6 +242,9 @@ SEVERITY=CRITICAL ALERT_TYPE=warnings METRIC_NAME=current VALUE=912.6 bash ./scr
 - Confirmar App Password válido quando usar Gmail.
 
 ## Evidências de entrega
+
+### Processamento de digest
+![Processamento de digest](./images/digest-test.png)
 
 ### Notificação no telemóvel (SMS)
 ![Notificação SMS recebida](./images/sms-test.png)

@@ -187,3 +187,120 @@ def v1_notifications_id_get(id):  # noqa: E501
         return {'error': {'message': f'Notification {id} not found', 'type': 'not_found', 'code': 404}}, 404
 
     return _doc_to_dict(doc), 200
+
+
+def v1_digest_process_post(body=None):  # noqa: E501
+    """POST /v1/digest/process — manual trigger to process queued digest messages."""
+    db = get_db()
+
+    if connexion.request.is_json:
+        data = connexion.request.get_json() or {}
+    else:
+        data = body if isinstance(body, dict) else (body.to_dict() if hasattr(body, 'to_dict') else {})
+
+    batch_size = data.get('batch_size', 50)
+    dry_run = bool(data.get('dry_run', False))
+
+    try:
+        batch_size = int(batch_size)
+    except (TypeError, ValueError):
+        return {'error': {'message': 'batch_size must be an integer', 'type': 'validation_error', 'code': 400}}, 400
+
+    if batch_size < 1 or batch_size > 500:
+        return {'error': {'message': 'batch_size must be between 1 and 500', 'type': 'validation_error', 'code': 400}}, 400
+
+    cursor = (
+        db.digest_queue
+        .find({'status': 'QUEUED_FOR_DIGEST'})
+        .sort('queued_at', 1)
+        .limit(batch_size)
+    )
+    entries = list(cursor)
+
+    if dry_run:
+        preview = []
+        for entry in entries:
+            preview.append(
+                {
+                    'id': str(entry.get('_id')),
+                    'target': entry.get('target'),
+                    'channel': entry.get('channel'),
+                    'alert_type': entry.get('alert_type'),
+                    'queued_at': entry.get('queued_at').isoformat() if isinstance(entry.get('queued_at'), datetime) else None,
+                }
+            )
+        return {
+            'status': 'dry_run',
+            'batch_size': batch_size,
+            'queued_found': len(entries),
+            'preview': preview,
+        }, 200
+
+    sent_count = 0
+    failed_count = 0
+    skipped_count = 0
+
+    for entry in entries:
+        queue_id = entry.get('_id')
+        notification_id = entry.get('notification_id')
+
+        locked = db.digest_queue.update_one(
+            {'_id': queue_id, 'status': 'QUEUED_FOR_DIGEST'},
+            {'$set': {'status': 'PROCESSING', 'processing_started_at': datetime.now(tz=timezone.utc)}},
+        )
+        if locked.modified_count == 0:
+            skipped_count += 1
+            continue
+
+        try:
+            delivery = twilio_provider.send_notification(
+                entry.get('target', ''),
+                entry.get('message', ''),
+                entry.get('channel', ''),
+                db,
+            )
+            sent_at = datetime.now(tz=timezone.utc)
+
+            queue_update = {
+                'status': 'SENT',
+                'sent_at': sent_at,
+                'updated_at': sent_at,
+            }
+            if delivery.get('message_sid'):
+                queue_update['message_sid'] = delivery['message_sid']
+
+            db.digest_queue.update_one({'_id': queue_id}, {'$set': queue_update})
+
+            notification_update = {
+                'status': 'DELIVERED',
+                'sent_at': sent_at,
+                'updated_at': sent_at,
+            }
+            if delivery.get('message_sid'):
+                notification_update['message_sid'] = delivery['message_sid']
+
+            if notification_id:
+                db.notifications.update_one({'_id': notification_id}, {'$set': notification_update})
+
+            sent_count += 1
+        except Exception as exc:
+            failed_at = datetime.now(tz=timezone.utc)
+            db.digest_queue.update_one(
+                {'_id': queue_id},
+                {'$set': {'status': 'FAILED', 'error': str(exc), 'updated_at': failed_at}},
+            )
+            if notification_id:
+                db.notifications.update_one(
+                    {'_id': notification_id},
+                    {'$set': {'status': 'FAILED', 'error': str(exc), 'updated_at': failed_at}},
+                )
+            failed_count += 1
+
+    return {
+        'status': 'processed',
+        'batch_size': batch_size,
+        'queued_found': len(entries),
+        'sent': sent_count,
+        'failed': failed_count,
+        'skipped': skipped_count,
+    }, 200
