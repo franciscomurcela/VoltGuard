@@ -188,3 +188,11 @@ SEVERITY=CRITICAL ALERT_TYPE=warnings METRIC_NAME=current VALUE=912.6 bash ./scr
 ### Falhas de email (SMTP)
 - Validar host, porta, TLS, remetente e credenciais.
 - Confirmar App Password válido quando usar Gmail.
+
+## Evidências de entrega
+
+### Notificação no telemóvel (SMS)
+![Notificação SMS recebida](./images/sms-test.png)
+
+### Notificação por email
+![Notificação email recebida](./images/email-test.png)
