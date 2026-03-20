@@ -12,6 +12,35 @@ from swagger_server import twilio_provider
 logger = logging.getLogger(__name__)
 
 
+def _normalize_alert_type(value: str) -> str:
+    normalized = (value or '').strip().lower()
+    if normalized in ('warning', 'warnings'):
+        return 'warnings'
+    if normalized == 'critical':
+        return 'critical'
+    return normalized
+
+
+def _channel_kind(channel: str) -> str:
+    lowered = (channel or '').lower()
+    if 'email' in lowered:
+        return 'email'
+    if 'whatsapp' in lowered or 'sms' in lowered:
+        return 'sms'
+    return 'sms'
+
+
+def _find_user_preference(db, target: str):
+    return db.user_preferences.find_one(
+        {
+            '$or': [
+                {'targets.sms': target},
+                {'targets.email': target},
+            ]
+        }
+    )
+
+
 def _doc_to_dict(doc: dict) -> dict:
     """Convert a MongoDB document to a JSON-serialisable dict."""
     result = dict(doc)
@@ -48,11 +77,14 @@ def v1_notifications_post(body):  # noqa: E501
     client_id = data.get('client_id')
     target = data.get('target')
     channel = data.get('channel')
+    alert_type = _normalize_alert_type(data.get('alert_type'))
     message_template = data.get('message_template', '')
     variables = data.get('variables') or {}
 
-    if not all([client_id, target, channel, message_template]):
-        return {'error': {'message': 'client_id, target, channel and message_template are required', 'type': 'validation_error', 'code': 400}}, 400
+    if not all([client_id, target, channel, alert_type, message_template]):
+        return {'error': {'message': 'client_id, target, channel, alert_type and message_template are required', 'type': 'validation_error', 'code': 400}}, 400
+    if alert_type not in ('critical', 'warnings'):
+        return {'error': {'message': "alert_type must be 'critical' or 'warning'", 'type': 'validation_error', 'code': 400}}, 400
 
     # Render the message
     try:
@@ -65,25 +97,71 @@ def v1_notifications_post(body):  # noqa: E501
         'client_id': client_id,
         'target': target,
         'channel': channel,
+        'alert_type': alert_type,
         'message_template': message_template,
         'variables': variables,
-        'status': 'pending',
+        'status': 'PENDING',
         'created_at': now,
     }
     result = db.notifications.insert_one(doc)
     notification_id = str(result.inserted_id)
 
+    preference = _find_user_preference(db, target)
+    channel_type = _channel_kind(channel)
+    if preference:
+        channel_enabled = bool(preference.get('channels', {}).get(channel_type, True))
+        delivery_mode = (preference.get('alert_type', {}).get(alert_type) or 'immediate').lower()
+    else:
+        channel_enabled = True
+        delivery_mode = 'immediate'
+
+    if not channel_enabled:
+        db.notifications.update_one(
+            {'_id': result.inserted_id},
+            {'$set': {'status': 'ABORTED_BY_PREFERENCE', 'updated_at': datetime.now(tz=timezone.utc)}}
+        )
+        return {
+            'id': notification_id,
+            'client_id': client_id,
+            'status': 'ABORTED_BY_PREFERENCE',
+            'created_at': now.isoformat(),
+        }, 201
+
+    if delivery_mode == 'digest':
+        db.digest_queue.insert_one(
+            {
+                'notification_id': result.inserted_id,
+                'client_id': client_id,
+                'target': target,
+                'channel': channel,
+                'alert_type': alert_type,
+                'message': message,
+                'status': 'QUEUED_FOR_DIGEST',
+                'queued_at': datetime.now(tz=timezone.utc),
+            }
+        )
+        db.notifications.update_one(
+            {'_id': result.inserted_id},
+            {'$set': {'status': 'QUEUED_FOR_DIGEST', 'updated_at': datetime.now(tz=timezone.utc)}}
+        )
+        return {
+            'id': notification_id,
+            'client_id': client_id,
+            'status': 'QUEUED_FOR_DIGEST',
+            'created_at': now.isoformat(),
+        }, 201
+
     # Attempt delivery
     try:
         delivery = twilio_provider.send_notification(target, message, channel, db)
-        status = 'sent' if delivery.get('success') else 'failed'
+        status = 'DELIVERED' if delivery.get('success') else 'FAILED'
         update_data = {'status': status, 'sent_at': datetime.now(tz=timezone.utc)}
         if delivery.get('message_sid'):
             update_data['message_sid'] = delivery['message_sid']
     except Exception as exc:
         logger.error("Delivery failed for notification %s: %s", notification_id, exc)
-        status = 'failed'
-        update_data = {'status': 'failed', 'error': str(exc)}
+        status = 'FAILED'
+        update_data = {'status': 'FAILED', 'error': str(exc)}
 
     db.notifications.update_one({'_id': result.inserted_id}, {'$set': update_data})
 

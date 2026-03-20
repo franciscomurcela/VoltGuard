@@ -1,259 +1,323 @@
 openapi: 3.0.3
 info:
-  title: Notifications API (Multichannel Gateway)
-  description: "API genérica e agnóstica para envio de notificações multicanal (Twilio,\
-    \ Email, etc.). Suporta filtragem por cliente, autenticação via query parameter\
-    \ e opt-out seguro."
+  title: API Notifications (VoltGuard)
+  description: O microsserviço de Notifications atua como um Gateway Multicanal genérico e agnóstico (semelhante a plataformas como o Twilio). Ele centraliza a comunicação do sistema e roteia as mensagens para o exterior via SMS, Email ou outros canais.
   version: 1.0.0
-servers:
-- url: /
+
 security:
-- AuthTokenQuery: []
+  - AuthTokenQuery: []
+
 paths:
   /v1/notifications:
-    get:
+    post:
+      summary: Pedido de envio de uma nova notificação
+      description: Recebe o pedido e cruza a informação com a coleção user_preferences. Se o utilizador tiver o canal desativado, o envio é abortado silenciosamente. Se a preferência for immediate, dispara o Twilio/Email na hora. Se for digest, guarda a mensagem na digest_queue para envio posterior.
       tags:
-      - Notifications
-      summary: Obter histórico de notificações (Filtrado por Cliente)
-      description: Retorna a lista de notificações enviadas. Obriga a filtrar por
-        `client_id` (ex. energy_composer) para que cada componente só veja as suas
-        próprias notificações.
-      operationId: v1_notifications_get
-      parameters:
-      - name: client_id
-        in: query
-        description: ID do microsserviço que enviou a notificação (Obrigatório).
+        - Gestão de Notificações
+      operationId: v1_notifications_post
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      requestBody:
         required: true
-        style: form
-        explode: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Número máximo de registos a retornar (Paginação).
-        required: false
-        style: form
-        explode: true
-        schema:
-          type: integer
-          default: 25
-      - name: offset
-        in: query
-        description: Número de registos a saltar (Paginação).
-        required: false
-        style: form
-        explode: true
-        schema:
-          type: integer
-          default: 0
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
       responses:
-        "200":
-          description: OK - Lista paginada retornada com sucesso.
+        '201':
+          description: CREATED - Notificação processada com sucesso (enviada ou colocada em fila).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: BAD REQUEST - Falha na validação dos dados de entrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: UNAUTHORIZED - Token de autenticação em falta ou inválido.
+
+    get:
+      summary: Obter histórico de notificações
+      tags:
+        - Gestão de Notificações
+      operationId: v1_notifications_get
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      parameters:
+        - name: client_id
+          in: query
+          description: ID do microsserviço remetente (ex. energy_composer).
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Máximo de registos a devolver.
+          required: false
+          schema:
+            type: integer
+            default: 25
+        - name: offset
+          in: query
+          description: Registos a saltar para paginação.
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: OK - Lista paginada de notificações.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/NotificationResponse"
-                x-content-type: application/json
-      x-openapi-router-controller: swagger_server.controllers.notifications_controller
-    post:
-      tags:
-      - Notifications
-      summary: Enviar uma nova notificação
-      description: Recebe um pedido genérico e usa o canal configurado (ex. Twilio)
-        para enviar a mensagem. Requer auth_token no URL.
-      operationId: v1_notifications_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NotificationRequest"
-        required: true
-      responses:
-        "201":
-          description: CREATED - Notificação enviada/registada com sucesso.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NotificationResponse"
-        "400":
-          description: BAD REQUEST - Falha na validação dos dados de entrada.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: UNAUTHORIZED - Token de autenticação em falta ou inválido.
-      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+                  $ref: '#/components/schemas/NotificationResponse'
+
   /v1/notifications/{id}:
     get:
+      summary: Consultar estado de entrega específico
+      description: Verifica se o estado é "Entregue", "Falhou" ou "Em Fila Digest".
       tags:
-      - Notifications
-      summary: Consultar estado de entrega
-      description: Permite verificar se um SMS do Twilio foi "Entregue" ou "Falhou".
+        - Gestão de Notificações
       operationId: v1_notifications_id_get
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
       parameters:
-      - name: id
-        in: path
-        description: ID único da notificação.
-        required: true
-        style: simple
-        explode: false
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          description: Identificador único da notificação.
+          schema:
+            type: string
       responses:
-        "200":
-          description: OK - Detalhes da notificação.
+        '200':
+          description: OK - Retorna o estado da notificação.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NotificationResponse"
-        "404":
+                $ref: '#/components/schemas/NotificationResponse'
+        '404':
           description: NOT FOUND - Notificação não encontrada no sistema.
-      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+
   /v1/channels:
     post:
+      summary: Registar novo provedor de envio dinamicamente
+      description: Permite adicionar credenciais (ex. Twilio) sem redeploy.
       tags:
-      - Channels
-      summary: Registar novo canal de envio dinamicamente
-      description: Regista um novo provedor (ex. Twilio) na base de dados sem necessidade
-        de redeploy.
+        - Gestão de Canais e Preferências
       operationId: v1_channels_post
+      x-openapi-router-controller: swagger_server.controllers.channels_controller
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ChannelRequest"
-        required: true
+              $ref: '#/components/schemas/ChannelRequest'
       responses:
-        "201":
-          description: CREATED - Canal registado.
-      x-openapi-router-controller: swagger_server.controllers.channels_controller
-  /v1/opt-out:
-    post:
+        '201':
+          description: CREATED - Canal registado com sucesso.
+
+  /v1/preferences:
+    get:
+      summary: Consultar preferências atuais do utilizador
       tags:
-      - Public
-      summary: Cancelar subscrição de um canal (Opt-out)
-      description: "Endpoint público usado pelo link mágico recebido pelo utilizador\
-        \ final. Não precisa do auth_token geral, pois o próprio parâmetro `secret`\
-        \ serve como autenticação."
-      operationId: v1_opt_out_post
-      parameters:
-      - name: secret
-        in: query
-        description: Hash/Secret único gerado para o utilizador.
-        required: true
-        style: form
-        explode: true
-        schema:
-          type: string
-      responses:
-        "200":
-          description: OK - Opt-out realizado com sucesso.
-      security: []
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_get
       x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: secret
+          in: query
+          required: true
+          description: Hash criptográfico único ligado ao utilizador.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Retorna as preferências do utilizador.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
+    patch:
+      summary: Atualizar preferências de receção (Opt-out parcial ou total)
+      description: Utiliza o método PATCH para atualizar apenas os campos modificados pelo utilizador na interface.
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_patch
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: secret
+          in: query
+          required: true
+          description: Hash criptográfico único ligado ao utilizador.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferencesUpdateRequest'
+      responses:
+        '200':
+          description: OK - Preferências atualizadas com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
   /health:
     get:
-      tags:
-      - Public
       summary: Health check
       operationId: health_get
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      tags:
+        - Gestão de Canais e Preferências
+      security: []
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
                 type: object
-      security: []
-      x-openapi-router-controller: swagger_server.controllers.public_controller
+
 components:
+  securitySchemes:
+    AuthTokenQuery:
+      type: apiKey
+      name: auth_token
+      in: query
+      description: Token de autenticação passado no URL.
+      x-apikeyInfoFunc: swagger_server.controllers.authorization_controller.check_AuthTokenQuery
+
   schemas:
     NotificationRequest:
-      required:
-      - channel
-      - client_id
-      - message_template
-      - target
       type: object
+      required:
+        - client_id
+        - target
+        - channel
+        - alert_type
+        - message_template
       properties:
         client_id:
           type: string
-          example: energy_composer
+          example: "energy_composer"
         target:
           type: string
-          description: Número de telefone ou email de destino.
-          example: "+351912345678"
+          example: "+351910000000"
         channel:
           type: string
-          example: twilio_sms
+          example: "twilio_sms"
+        alert_type:
+          type: string
+          description: "critical ou warning"
+          example: "critical"
         message_template:
           type: string
-          example: "Alerta: Falha detetada no sensor {{sensor_id}}."
+          example: "Alerta Crítico na subestação A."
         variables:
           type: object
-          description: Variáveis dinâmicas para injetar no template.
-          example:
-            sensor_id: SENS-001
+          additionalProperties: true
+
     NotificationResponse:
       type: object
       properties:
         id:
           type: string
-          example: notif_890xyz
+          example: "notif_890xyz"
         client_id:
           type: string
-          example: energy_composer
+          example: "energy_composer"
         status:
           type: string
-          example: DELIVERED
+          example: "QUEUED_FOR_DIGEST"
         created_at:
           type: string
           format: date-time
-          example: 2026-03-04T10:30:00Z
-      example:
-        created_at: 2026-03-04T10:30:00Z
-        id: notif_890xyz
-        client_id: energy_composer
-        status: DELIVERED
+          example: "2026-03-04T10:30:00Z"
+
     ChannelRequest:
-      required:
-      - api_key
-      - name
-      - provider
       type: object
+      required:
+        - name
+        - provider
+        - api_key
       properties:
         name:
           type: string
-          example: twilio_sms_urgent
+          example: "twilio_sms_principal"
         provider:
           type: string
-          example: twilio
+          example: "twilio"
         api_key:
           type: string
-          example: AK_12345XYZ
+          example: "chave_api_123"
+
+    PreferencesResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: "op_joao_silva"
+        channels:
+          type: object
+          properties:
+            sms:
+              type: boolean
+              example: true
+            email:
+              type: boolean
+              example: true
+        alert_type:
+          type: object
+          properties:
+            critical:
+              type: string
+              example: "immediate"
+            warnings:
+              type: string
+              example: "digest"
+
+    PreferencesUpdateRequest:
+      type: object
+      properties:
+        channels:
+          type: object
+          properties:
+            sms:
+              type: boolean
+              example: false
+            email:
+              type: boolean
+              example: true
+        alert_type:
+          type: object
+          properties:
+            critical:
+              type: string
+              example: "immediate"
+            warnings:
+              type: string
+              example: "digest"
+
     ErrorResponse:
       type: object
       properties:
         error:
-          $ref: "#/components/schemas/ErrorResponse_error"
-    ErrorResponse_error:
-      type: object
-      properties:
-        message:
-          type: string
-          example: O parâmetro 'target' é obrigatório.
-        type:
-          type: string
-          example: ValidationException
-        code:
-          type: integer
-          example: 400
-  securitySchemes:
-    AuthTokenQuery:
-      type: apiKey
-      description: Token de autenticação obrigatório no URL.
-      name: auth_token
-      in: query
-      x-apikeyInfoFunc: swagger_server.controllers.authorization_controller.check_AuthTokenQuery
+          type: object
+          properties:
+            message:
+              type: string
+              example: "O parâmetro 'alert_type' é obrigatório para verificar as preferências do utilizador."
+            type:
+              type: string
+              example: "ValidationException"
+            code:
+              type: integer
+              example: 400

@@ -149,8 +149,14 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
       TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
-      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-noreply@voltguard.com}
-      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-alertasvoltguard@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "8083:8083"
