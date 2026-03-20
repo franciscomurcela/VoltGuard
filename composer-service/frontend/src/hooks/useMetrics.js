@@ -74,19 +74,25 @@ function generateMockHealth() {
 }
 
 function generateSparkline(length = 20) {
-  const data = []
-  let val = 50 + Math.random() * 50
-  for (let i = 0; i < length; i++) {
-    val += (Math.random() - 0.48) * 15
-    val = Math.max(10, Math.min(100, val))
-    data.push(Math.floor(val))
-  }
-  return data
+  // Start as a flat line in the middle — "waiting for data"
+  // All points are null until real data arrives
+  return new Array(length).fill(null)
 }
 // ─── End Mock ───────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL = 3000
-const USE_MOCK = true // flip to false once backend is wired
+const SPARKLINE_LENGTH = 20
+const USE_MOCK = false // flip to false once backend is wired
+
+/**
+ * Push a new value into a sparkline array.
+ * Nulls stay until replaced by real data, so the line
+ * "grows" from the right instead of dropping from random heights.
+ */
+function pushSparkValue(arr, newValue) {
+  const next = [...arr.slice(1), newValue]
+  return next
+}
 
 export default function useMetrics() {
   const [metrics, setMetrics] = useState(null)
@@ -109,10 +115,10 @@ export default function useMetrics() {
         setDistricts(generateMockDistricts())
         setServiceHealth(generateMockHealth())
         setSparklines((prev) => ({
-          requests: [...prev.requests.slice(1), 30000 + Math.floor(Math.random() * 15000)],
-          firewall: [...prev.firewall.slice(1), 1200 + Math.floor(Math.random() * 800)],
-          devices: [...prev.devices.slice(1), 5000 + Math.floor(Math.random() * 3000)],
-          cache: [...prev.cache.slice(1), 4000 + Math.floor(Math.random() * 4000)],
+          requests: pushSparkValue(prev.requests, 30000 + Math.floor(Math.random() * 15000)),
+          firewall: pushSparkValue(prev.firewall, 1200 + Math.floor(Math.random() * 800)),
+          devices: pushSparkValue(prev.devices, 5000 + Math.floor(Math.random() * 3000)),
+          cache: pushSparkValue(prev.cache, 4000 + Math.floor(Math.random() * 4000)),
         }))
       } else {
         const [metricsRes, districtsRes, healthRes] = await Promise.all([
@@ -121,7 +127,18 @@ export default function useMetrics() {
           healthApi.check(),
         ])
         setMetrics(metricsRes.data)
-        setDistricts(districtsRes.data)
+
+        // Normalize: real API returns { id, name, count }
+        // Keep both count (PortugalMap) and requests/rate (Dashboard) fields
+        const normalized = (Array.isArray(districtsRes.data) ? districtsRes.data : []).map((d) => ({
+          id: d.id || d.name?.toLowerCase(),
+          name: d.name,
+          count: d.count ?? 0,
+          requests: d.count ?? 0, // Dashboard uses requests
+          rate: 0,                // OAM doesn't provide req/s per district
+        }))
+        setDistricts(normalized)
+
         setServiceHealth(healthRes.data)
       }
       setError(null)

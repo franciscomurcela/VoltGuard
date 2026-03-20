@@ -18,6 +18,9 @@ import deviceRoutes from './routes/devices.js'
 import metricsRoutes from './routes/metrics.js'
 import districtRoutes from './routes/districts.js'
 import notificationRoutes from './routes/notifications.js'
+import anomalyRoutes from './routes/anomalies.js'
+import firmwareRoutes from './routes/firmwares.js'
+import preferencesRoutes from './routes/preferences.js'
 
 const app = express()
 
@@ -46,12 +49,15 @@ app.use(rateLimiter)
 // ─── Routes ─────────────────────────────────────────────────────────────────
 // Health routes are public (no auth) — K8s probes need unauthenticated access
 app.use('/api/health', healthRoutes)
+app.use('/api/public', preferencesRoutes)
 
 // Protected routes
 app.use('/api/devices', deviceRoutes)
 app.use('/api/metrics', metricsRoutes)
 app.use('/api/districts', districtRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/anomalies', anomalyRoutes)
+app.use('/api/firmwares', firmwareRoutes)
 
 // ─── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

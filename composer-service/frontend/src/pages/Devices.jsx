@@ -2,14 +2,28 @@ import { useState } from 'react'
 import useDevices from '../hooks/useDevices'
 import DeviceTable from '../components/devices/DeviceTable'
 import DeviceForm from '../components/devices/DeviceForm'
+import SensorActionsPanel from '../components/devices/SensorActionsPanel'
 
 export default function Devices() {
-  const { devices, stats, loading, createDevice, deleteDevice } = useDevices()
+  const { devices, stats, loading, createDevice, deleteDevice, refetch } = useDevices()
   const [showForm, setShowForm] = useState(false)
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null)
 
   const handleCreate = async (formData) => {
     await createDevice(formData)
     setShowForm(false)
+  }
+
+  const selectedDevice = selectedDeviceId
+    ? devices.find((d) => d.id === selectedDeviceId) || null
+    : null
+
+  const handleRowClick = (deviceId) => {
+    setSelectedDeviceId((prev) => (prev === deviceId ? null : deviceId))
+  }
+
+  const handleActionComplete = () => {
+    refetch()
   }
 
   if (loading) {
@@ -19,7 +33,7 @@ export default function Devices() {
           className="mono"
           style={{ fontSize: 13, color: 'var(--text-faint)', animation: 'pulse 2s ease infinite' }}
         >
-          Loading device registry...
+          Loading sensor registry...
         </div>
       </div>
     )
@@ -31,10 +45,10 @@ export default function Devices() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: -0.5 }}>
-            Device Registry
+            Sensor Registry
           </h2>
           <p className="mono" style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>
-            {stats.total} devices registered · {stats.active} online · {stats.warning} warnings
+            {stats.total} sensors registered · {stats.active} online · {stats.inactive} offline · {stats.warning} anomalies
           </p>
         </div>
         <button
@@ -49,7 +63,7 @@ export default function Devices() {
             fontWeight: 500,
           }}
         >
-          {showForm ? 'Cancel' : '+ Register Device'}
+          {showForm ? 'Cancel' : '+ Register Sensor'}
         </button>
       </div>
 
@@ -57,7 +71,7 @@ export default function Devices() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         {[
           { label: 'Active', value: stats.active, color: 'var(--accent-green)' },
-          { label: 'Warning', value: stats.warning, color: 'var(--accent-yellow)' },
+          { label: 'Anomaly', value: stats.warning, color: 'var(--accent-yellow)' },
           { label: 'Inactive', value: stats.inactive, color: 'var(--text-faint)' },
           { label: 'Pending', value: stats.pending, color: 'var(--accent-blue)' },
         ].map((s) => (
@@ -91,8 +105,22 @@ export default function Devices() {
         />
       )}
 
-      {/* Device table */}
-      <DeviceTable devices={devices} onDelete={deleteDevice} />
+      {/* Sensor table — click a row to expand actions */}
+      <DeviceTable
+        devices={devices}
+        onDelete={deleteDevice}
+        onRowClick={handleRowClick}
+        selectedId={selectedDeviceId}
+      />
+
+      {/* Actions panel — reboot, clear anomaly, firmware update */}
+      {selectedDevice && (
+        <SensorActionsPanel
+          device={selectedDevice}
+          onClose={() => setSelectedDeviceId(null)}
+          onActionComplete={handleActionComplete}
+        />
+      )}
     </div>
   )
 }

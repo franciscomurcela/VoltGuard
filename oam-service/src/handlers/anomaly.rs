@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     db::{self, AppState},
     error::{ApiError, ErrorBody},
-    models::anomaly::{AnomalyInput, AnomalyLog},
+    models::sensor::Sensor,
 };
 
 #[utoipa::path(
@@ -16,10 +16,8 @@ use crate::{
     params(
         ("id" = Uuid, Path, description = "Sensor ID"),
     ),
-    request_body = AnomalyInput,
     responses(
-        (status = 200, description = "Anomaly logged", body = AnomalyLog),
-        (status = 400, description = "Invalid input", body = ErrorBody),
+        (status = 200, description = "Anomaly flag set on sensor", body = Sensor),
         (status = 404, description = "Sensor not found", body = ErrorBody),
     ),
     tag = "Anomalies",
@@ -27,17 +25,10 @@ use crate::{
 pub async fn report(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(input): Json<AnomalyInput>,
-) -> Result<Json<AnomalyLog>, ApiError> {
-    if input.description.trim().is_empty() {
-        return Err(ApiError::BadRequest("description cannot be empty".to_string()));
-    }
-
-    // Verify sensor exists before writing the anomaly log
-    db::sensors::find_by_id(&state.pool, id)
+) -> Result<Json<Sensor>, ApiError> {
+    let sensor = db::sensors::mark_anomaly(&state.pool, id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Sensor '{}' not found", id)))?;
 
-    let log = db::anomalies::report(&state.pool, id, &input.description).await?;
-    Ok(Json(log))
+    Ok(Json(sensor))
 }

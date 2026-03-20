@@ -3,25 +3,23 @@ import { getNotificationHealth } from '../services/notificationProxy.js'
 import { getAnomalyHealth } from '../services/anomalyProxy.js'
 import logger from '../utils/logger.js'
 
-// ─── Health Cache ───────────────────────────────────────────────────────────
+// ─── Health Cache ────────────────────────────────────────────────────────────
 // K8s readiness probe fires every 10s. Without caching, that's 3 upstream
 // health calls every 10s just for probes. Cache results for 5s.
 let healthCache = null
 let healthCacheTime = 0
-const HEALTH_CACHE_TTL = 5000 // 5 seconds
+const HEALTH_CACHE_TTL = 5000
 
 async function getAggregatedHealth() {
   const now = Date.now()
   if (healthCache && (now - healthCacheTime) < HEALTH_CACHE_TTL) {
     return healthCache
   }
-
   const [oam, notification, anomaly] = await Promise.all([
     getOamHealth(),
     getNotificationHealth(),
     getAnomalyHealth(),
   ])
-
   healthCache = { oam, notification, anomaly }
   healthCacheTime = now
   return healthCache
@@ -29,7 +27,9 @@ async function getAggregatedHealth() {
 
 /**
  * GET /api/health
- * Returns compositor's own health plus the health of all peer services.
+ * Always returns HTTP 200. The composite status is in the response body.
+ * 503 was causing the frontend to crash — degraded peers are not a fatal
+ * error for the compositor itself, so we communicate status in the payload.
  */
 export async function check(req, res) {
   try {
@@ -42,7 +42,7 @@ export async function check(req, res) {
     if (peerStatuses.includes('down')) compositeStatus = 'degraded'
     if (peerStatuses.every((s) => s === 'down')) compositeStatus = 'down'
 
-    const payload = {
+    res.status(200).json({
       status: compositeStatus,
       compositor: {
         status: 'healthy',
@@ -54,15 +54,17 @@ export async function check(req, res) {
       notification,
       anomaly,
       _timestamp: new Date().toISOString(),
-    }
-
-    const httpStatus = compositeStatus === 'down' ? 503 : 200
-    res.status(httpStatus).json(payload)
+    })
   } catch (err) {
     logger.error({ err: err.message }, 'Health check failed unexpectedly')
-    res.status(500).json({
-      status: 'error',
-      message: 'Health check failed',
+    // Still 200 — the compositor is alive, it just couldn't reach peers
+    res.status(200).json({
+      status: 'degraded',
+      compositor: { status: 'healthy' },
+      oam:          { status: 'unknown' },
+      notification: { status: 'unknown' },
+      anomaly:      { status: 'unknown' },
+      _timestamp: new Date().toISOString(),
     })
   }
 }
@@ -78,12 +80,12 @@ export async function liveness(req, res) {
 /**
  * GET /api/health/ready
  * Readiness probe — uses cached health so we don't hammer peers.
+ * Keeps 503 behaviour since this is used by K8s, not the frontend.
  */
 export async function readiness(req, res) {
   try {
     const { oam, notification, anomaly } = await getAggregatedHealth()
     const anyHealthy = [oam, notification, anomaly].some((s) => s.status === 'healthy')
-
     if (anyHealthy) {
       res.status(200).json({ status: 'ready' })
     } else {

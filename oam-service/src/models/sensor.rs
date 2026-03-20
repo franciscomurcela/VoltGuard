@@ -19,6 +19,9 @@ pub enum AnomalyStatus {
 pub enum PendingAction {
     None,
     Reboot,
+    /// Retained for database enum compatibility only — never written or returned by the API.
+    /// Firmware updates are staged via `pending_firmware_id` and applied on `REBOOT`.
+    #[allow(dead_code)]
     UpdateFirmware,
 }
 
@@ -31,6 +34,9 @@ pub struct Sensor {
     pub current_firmware_id: Option<Uuid>,
     pub anomaly_status: AnomalyStatus,
     pub pending_action: PendingAction,
+    /// True when a firmware has been staged via the update-firmware action
+    /// but the sensor has not yet rebooted to apply it.
+    pub firmware_update_pending: bool,
     pub created_at: DateTime<Utc>,
 }
 

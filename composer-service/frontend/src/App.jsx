@@ -6,6 +6,9 @@ import Footer from './components/layout/Footer'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
+import Anomalies from './pages/Anomalies'
+import Notifications from './pages/Notifications'
+import Preferences from './pages/Preferences'
 
 // ─── Auth Guard ─────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
@@ -33,6 +36,8 @@ function AppLayout() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/devices" element={<Devices />} />
+          <Route path="/anomalies" element={<Anomalies />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -45,9 +50,17 @@ function AppLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <ProtectedRoute>
-        <AppLayout />
-      </ProtectedRoute>
+      <Routes>
+        <Route path="/preferences" element={<Preferences />} />
+        <Route
+          path="*"
+          element={(
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>
     </BrowserRouter>
   )
 }

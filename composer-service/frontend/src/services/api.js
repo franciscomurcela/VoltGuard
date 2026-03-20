@@ -73,4 +73,42 @@ export const healthApi = {
   check: () => api.get('/health'),
 }
 
+export const anomaliesApi = {
+  getAll: (params) => api.get('/anomalies', { params }),
+  getById: (id) => api.get(`/anomalies/${id}`),
+  getSummary: () => api.get('/anomalies/summary'),
+  getModelConfig: () => api.get('/anomalies/model-config'),
+  updateModelConfig: (data) => api.put('/anomalies/model-config', data),
+}
+
+export const notificationsApi = {
+  getAll: (params) => api.get('/notifications', { params }),
+  getById: (id) => api.get(`/notifications/${id}`),
+  send: (data) => api.post('/notifications', data),
+}
+
+export const preferencesApi = {
+  getBySecret: (secret) => api.get('/public/preferences', { params: { secret } }),
+  patchBySecret: (secret, data) => api.patch('/public/preferences', data, { params: { secret } }),
+}
+
+export const sensorActionsApi = {
+  reboot: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'REBOOT' }),
+  clearAnomaly: (deviceId) => api.post(`/devices/${deviceId}/actions`, { action: 'CLEAR_ANOMALY' }),
+  updateFirmware: (deviceId, firmwareId) => api.post(`/devices/${deviceId}/actions`, { action: 'FIRMWARE_UPDATE', firmware_id: firmwareId }),
+  reportAnomaly: (deviceId, data) => api.post(`/devices/${deviceId}/anomalies`, data),
+  sendKeepalive: (deviceId, data) => api.post(`/devices/${deviceId}/keepalive`, data),
+}
+
+export const firmwaresApi = {
+  getAll: () => api.get('/firmwares'),
+  upload: (file, version) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('version', version)
+    return api.post('/firmwares', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  getDownloadUrl: (id) => `/api/firmwares/${id}/download`,
+}
+
 export default api

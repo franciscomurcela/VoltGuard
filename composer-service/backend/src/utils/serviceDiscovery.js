@@ -8,8 +8,8 @@ import logger from './logger.js'
 const services = {
   oam: {
     name: 'OAM Service',
-    baseUrl: process.env.OAM_SERVICE_URL || 'http://localhost:8081',
-    healthPath: '/api/health',
+    baseUrl: process.env.OAM_SERVICE_URL || 'http://localhost:8084',
+    healthPath: '/health',
   },
   notification: {
     name: 'Notification Service',

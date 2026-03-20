@@ -5,6 +5,8 @@ import keycloak, { initOptions } from './config/keycloak'
 import App from './App'
 import './styles/global.css'
 
+const isPublicPreferencesRoute = window.location.pathname.startsWith('/preferences')
+
 // ─── Keycloak Event Logger (dev only) ───────────────────────────────────────
 const onKeycloakEvent = (event, error) => {
   if (import.meta.env.DEV) {
@@ -21,15 +23,19 @@ const onKeycloakTokens = (tokens) => {
 // ─── Render ─────────────────────────────────────────────────────────────────
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ReactKeycloakProvider
-      authClient={keycloak}
-      initOptions={initOptions}
-      onEvent={onKeycloakEvent}
-      onTokens={onKeycloakTokens}
-      LoadingComponent={<LoadingScreen />}
-    >
+    {isPublicPreferencesRoute ? (
       <App />
-    </ReactKeycloakProvider>
+    ) : (
+      <ReactKeycloakProvider
+        authClient={keycloak}
+        initOptions={initOptions}
+        onEvent={onKeycloakEvent}
+        onTokens={onKeycloakTokens}
+        LoadingComponent={<LoadingScreen />}
+      >
+        <App />
+      </ReactKeycloakProvider>
+    )}
   </React.StrictMode>
 )
 

@@ -6,9 +6,9 @@ use crate::{
         actions::ActionUpdateInput,
         firmware::FirmwareUploadRequest,
         keepalive::KeepAliveResponse,
+        sensors::{ImportResult, ImportRowError, SensorImportRequest},
     },
     models::{
-        anomaly::{AnomalyInput, AnomalyLog},
         firmware::Firmware,
         sensor::{AnomalyStatus, PendingAction, Sensor, SensorInput, SensorPatch, SensorStats},
     },
@@ -23,6 +23,7 @@ use crate::{
         crate::handlers::sensors::update,
         crate::handlers::sensors::delete,
         crate::handlers::sensors::stats,
+        crate::handlers::sensors::import,
         crate::handlers::firmware::upload,
         crate::handlers::firmware::list,
         crate::handlers::firmware::download,
@@ -35,8 +36,8 @@ use crate::{
     components(schemas(
         Sensor, SensorInput, SensorPatch, SensorStats, AnomalyStatus, PendingAction,
         Firmware, FirmwareUploadRequest,
-        AnomalyInput, AnomalyLog,
         KeepAliveResponse, ActionUpdateInput,
+        SensorImportRequest, ImportResult, ImportRowError,
         ErrorBody,
     )),
     tags(

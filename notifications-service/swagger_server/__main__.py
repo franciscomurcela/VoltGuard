@@ -13,6 +13,7 @@ load_dotenv(dotenv_path=_env_path, override=True)
 import connexion
 
 from swagger_server import encoder
+from swagger_server.db import get_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    get_db()
+
     app = connexion.App(__name__, specification_dir='./swagger/')
     app.app.json_encoder = encoder.JSONEncoder
     app.add_api(

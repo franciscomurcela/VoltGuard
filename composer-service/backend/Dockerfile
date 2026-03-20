@@ -1,7 +1,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -9,9 +9,9 @@ WORKDIR /app
 RUN addgroup -g 1001 -S compositor && \
     adduser -S compositor -u 1001
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY src ./src
+COPY --from=deps --chown=compositor:compositor /app/node_modules ./node_modules
+COPY --chown=compositor:compositor package.json ./
+COPY --chown=compositor:compositor src ./src
 
 RUN mkdir -p /app/data && chown compositor:compositor /app/data
 

@@ -41,7 +41,12 @@ export async function getNotificationById(req, notificationId) {
 
 export async function sendNotification(req, notificationData) {
   const url = getServiceUrl('notification', '/v1/notifications')
-  const res = await client.post(url, notificationData, {
+  const payload = {
+    client_id: CLIENT_ID,
+    ...notificationData,
+  }
+
+  const res = await client.post(url, payload, {
     headers: forwardHeaders(req),
     params: { auth_token: AUTH_TOKEN },
   })
