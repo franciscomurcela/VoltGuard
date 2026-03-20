@@ -100,6 +100,30 @@ paths:
         '404':
           description: NOT FOUND - Notificação não encontrada no sistema.
 
+  /v1/digest/process:
+    post:
+      summary: Processar fila de digest manualmente
+      description: Trigger manual para processar notificações em fila de digest. Útil em ambiente local/teste e reutilizável por scheduler em produção.
+      tags:
+        - Gestão de Notificações
+      operationId: v1_digest_process_post
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DigestProcessRequest'
+      responses:
+        '200':
+          description: OK - Processamento da fila concluído.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DigestProcessResponse'
+        '400':
+          description: BAD REQUEST - Parâmetros inválidos.
+
   /v1/channels:
     post:
       summary: Registar novo provedor de envio dinamicamente
@@ -344,3 +368,44 @@ components:
             code:
               type: integer
               example: 400
+
+    DigestProcessRequest:
+      type: object
+      properties:
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 50
+          example: 50
+        dry_run:
+          type: boolean
+          default: false
+          example: true
+
+    DigestProcessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "processed"
+        batch_size:
+          type: integer
+          example: 50
+        queued_found:
+          type: integer
+          example: 12
+        sent:
+          type: integer
+          example: 10
+        failed:
+          type: integer
+          example: 2
+        skipped:
+          type: integer
+          example: 0
+        preview:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
