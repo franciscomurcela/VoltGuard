@@ -61,7 +61,7 @@ export default function useDevices() {
       } else {
         const res = await devicesApi.getAll()
         const data = Array.isArray(res.data) ? res.data : res.data?.sensors || res.data?.data || []
-        setDevices(data)
+        setDevices(data.map(normalize))
       }
       setError(null)
     } catch (err) {
@@ -95,8 +95,9 @@ export default function useDevices() {
         return normalize(newSensor)
       } else {
         const res = await devicesApi.create(deviceData)
-        setDevices((prev) => [res.data, ...prev])
-        return res.data
+        const created = normalize(res.data)
+        setDevices((prev) => [created, ...prev])
+        return created
       }
     } catch (err) {
       console.error('[useDevices] Create failed:', err)
@@ -120,27 +121,14 @@ export default function useDevices() {
     }
   }, [])
 
-  // Single-pass stats — apply same stale logic as DeviceTable
-  const STALE_THRESHOLD_MS = 120000 // 2 minutes
+  // Single-pass stats — status is already resolved by normalize()
   const stats = devices.reduce(
     (acc, d) => {
       acc.total++
-
-      // Check if sensor is stale (no keepalive recently)
-      let effectiveStatus = d.status
-      if (d.status === 'active' && d.lastSeen) {
-        const lastDate = new Date(d.lastSeen)
-        if (!isNaN(lastDate.getTime()) && (Date.now() - lastDate.getTime()) > STALE_THRESHOLD_MS) {
-          effectiveStatus = 'inactive'
-        }
-      } else if (d.status === 'active' && !d.lastSeen) {
-        effectiveStatus = 'inactive'
-      }
-
-      if (effectiveStatus === 'active') acc.active++
-      else if (effectiveStatus === 'warning') acc.warning++
-      else if (effectiveStatus === 'inactive') acc.inactive++
-      else if (effectiveStatus === 'pending') acc.pending++
+      if (d.status === 'active') acc.active++
+      else if (d.status === 'warning') acc.warning++
+      else if (d.status === 'inactive') acc.inactive++
+      else if (d.status === 'pending') acc.pending++
       return acc
     },
     { total: 0, active: 0, warning: 0, inactive: 0, pending: 0 }
