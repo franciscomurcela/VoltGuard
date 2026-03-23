@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import useDevices from '../hooks/useDevices'
 import DeviceTable from '../components/devices/DeviceTable'
 import DeviceForm from '../components/devices/DeviceForm'
 import SensorActionsPanel from '../components/devices/SensorActionsPanel'
+import { firmwaresApi } from '../services/api'
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 function parseCSV(text) {
@@ -282,8 +283,13 @@ function CSVImportModal({ rows, errors, onConfirm, onClose, importing, importPro
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Devices() {
   const { devices, stats, loading, createDevice, deleteDevice, refetch } = useDevices()
+  const [firmwares, setFirmwares] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [selectedDeviceId, setSelectedDeviceId] = useState(null)
+
+  useEffect(() => {
+    firmwaresApi.getAll().then((res) => setFirmwares(res.data ?? [])).catch(() => {})
+  }, [])
 
   // CSV import state
   const [csvRows, setCsvRows] = useState(null)       // parsed rows (null = modal closed)
@@ -516,6 +522,7 @@ export default function Devices() {
       {/* Sensor table */}
       <DeviceTable
         devices={devices}
+        firmwares={firmwares}
         onDelete={deleteDevice}
         onRowClick={handleRowClick}
         selectedId={selectedDeviceId}

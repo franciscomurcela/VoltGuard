@@ -88,6 +88,7 @@ export function normalizeDevice(oamDevice) {
     status: deriveStatus(oamDevice),
     anomalyStatus: oamDevice.anomaly_status || null,
     firmware: oamDevice.current_firmware_id || null,
+    firmwareUpdatePending: oamDevice.firmware_update_pending === true,
     lastSeen: oamDevice.ultimo_keepalive || null,
     pendingAction: oamDevice.pending_action && oamDevice.pending_action !== 'NONE'
       ? oamDevice.pending_action

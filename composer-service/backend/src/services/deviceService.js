@@ -69,12 +69,6 @@ export async function registerDevice(req, payload) {
 }
 
 export async function updateDevice(req, id, payload) {
-  if (payload.ip && !/^(\d{1,3}\.){3}\d{1,3}$/.test(payload.ip)) {
-    const err = new Error('Invalid IP address format')
-    err.name = 'ValidationError'
-    throw err
-  }
-
   const updated = await oam.updateDevice(req, id, payload)
   const normalized = normalizeDevice(updated)
 

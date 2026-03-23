@@ -199,12 +199,11 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
     setTimeout(() => setFeedback(null), 4000)
   }
 
-  const dispatch = async (key, fn, label) => {
+  const dispatch = async (key, fn, successMsg) => {
     setActionLoading(key)
     try {
       await fn()
-      // Actions are always scheduled — executed on next keepalive, not immediately
-      showMsg('ok', `${label} scheduled — will execute on next keepalive.`)
+      showMsg('ok', successMsg)
       onActionComplete?.()
     } catch (err) {
       showMsg('err', err?.response?.data?.message || err.message || 'Request failed')
@@ -215,9 +214,9 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
 
   if (!device) return null
 
-  const status   = STATUS_META[device.status] ?? { label: device.status, color: 'var(--text-muted)' }
-  const isWarning = device.status === 'warning'
-  const isOffline = device.status === 'inactive'
+  const status    = STATUS_META[device.status] ?? { label: device.status, color: 'var(--text-muted)' }
+  const hasAnomaly = device.anomalyStatus === 'DETECTED'
+  const isOffline  = device.status === 'inactive'
   const busy      = !!actionLoading
 
   return (
@@ -296,16 +295,16 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
               color="var(--accent-blue)"
               loading={actionLoading === 'reboot'}
               disabled={busy && actionLoading !== 'reboot'}
-              onClick={() => dispatch('reboot', () => sensorActionsApi.reboot(device.id), 'Reboot')}
+              onClick={() => dispatch('reboot', () => sensorActionsApi.reboot(device.id), 'Reboot scheduled — will execute on next keepalive.')}
             />
-            {isWarning ? (
+            {hasAnomaly ? (
               <ActionBtn
                 label="Clear Anomaly"
                 sub="Resets anomaly_status to NONE"
                 color="var(--accent-yellow)"
                 loading={actionLoading === 'anomaly'}
                 disabled={busy && actionLoading !== 'anomaly'}
-                onClick={() => dispatch('anomaly', () => sensorActionsApi.clearAnomaly(device.id), 'Clear anomaly')}
+                onClick={() => dispatch('anomaly', () => sensorActionsApi.clearAnomaly(device.id), 'Anomaly cleared — sensor status reset to normal.')}
               />
             ) : (
               <div style={{
@@ -355,14 +354,14 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
               </div>
               <ActionBtn
                 label="Schedule Update"
-                sub="Delivered via next keepalive"
+                sub="Stages firmware — schedule a Reboot to apply"
                 color="var(--accent-orange)"
                 loading={actionLoading === 'firmware'}
                 disabled={(busy && actionLoading !== 'firmware') || !selectedFw}
                 onClick={() => dispatch(
                   'firmware',
                   () => sensorActionsApi.updateFirmware(device.id, selectedFw),
-                  'Firmware update'
+                  'Firmware staged — schedule a Reboot to apply.'
                 )}
               />
             </div>
@@ -461,7 +460,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
         background: 'rgba(255,255,255,0.005)',
       }}>
         <span className="mono" style={{ fontSize: 10, color: 'var(--text-ghost)' }}>
-          Actions are scheduled in the DB immediately · delivered to the device on the next keepalive cycle
+          Reboot is delivered on the next keepalive · firmware update is staged and applied when the device reboots
         </span>
       </div>
     </div>

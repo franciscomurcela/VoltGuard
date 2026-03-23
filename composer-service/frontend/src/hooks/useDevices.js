@@ -40,6 +40,7 @@ function normalize(sensor) {
     status,
     anomalyStatus: sensor.anomaly_status || null,
     firmware: sensor.current_firmware_id || null,
+    firmwareUpdatePending: sensor.firmware_update_pending === true,
     lastSeen: sensor.ultimo_keepalive || null,
     pendingAction: sensor.pending_action && sensor.pending_action !== 'NONE'
       ? sensor.pending_action
@@ -61,7 +62,7 @@ export default function useDevices() {
       } else {
         const res = await devicesApi.getAll()
         const data = Array.isArray(res.data) ? res.data : res.data?.sensors || res.data?.data || []
-        setDevices(data.map(normalize))
+        setDevices(data)
       }
       setError(null)
     } catch (err) {
@@ -95,7 +96,7 @@ export default function useDevices() {
         return normalize(newSensor)
       } else {
         const res = await devicesApi.create(deviceData)
-        const created = normalize(res.data)
+        const created = res.data
         setDevices((prev) => [created, ...prev])
         return created
       }
@@ -128,7 +129,7 @@ export default function useDevices() {
       if (d.status === 'active') acc.active++
       else if (d.status === 'warning') acc.warning++
       else if (d.status === 'inactive') acc.inactive++
-      else if (d.status === 'pending') acc.pending++
+      if (d.firmwareUpdatePending) acc.pending++
       return acc
     },
     { total: 0, active: 0, warning: 0, inactive: 0, pending: 0 }

@@ -46,7 +46,8 @@ function isStale(lastSeen, thresholdMs = 120000) {
   return (Date.now() - date.getTime()) > thresholdMs
 }
 
-export default function DeviceTable({ devices = [], onDelete, onRowClick, selectedId }) {
+export default function DeviceTable({ devices = [], firmwares = [], onDelete, onRowClick, selectedId }) {
+  const firmwareMap = firmwares.reduce((acc, fw) => { acc[fw.id] = fw.version; return acc }, {})
   if (!devices.length) {
     return (
       <div
@@ -130,11 +131,13 @@ export default function DeviceTable({ devices = [], onDelete, onRowClick, select
                 {device.district}
               </td>
 
-              {/* Firmware (UUID from OAM) */}
+              {/* Firmware version */}
               <td>
                 <span className="mono" style={{ color: 'var(--text-ghost)', fontSize: 11 }}>
                   {device.firmware
-                    ? `${device.firmware.substring(0, 8)}...`
+                    ? firmwareMap[device.firmware]
+                      ? `v${firmwareMap[device.firmware]}`
+                      : `${device.firmware.substring(0, 8)}…`
                     : '—'}
                 </span>
               </td>
@@ -159,15 +162,30 @@ export default function DeviceTable({ devices = [], onDelete, onRowClick, select
                     className="mono"
                     style={{
                       fontSize: 10,
-                      color: 'var(--accent-yellow)',
+                      color: 'var(--accent-blue)',
                       padding: '2px 8px',
-                      background: 'var(--accent-yellow-dim)',
+                      background: 'var(--accent-blue-dim)',
                       borderRadius: 'var(--radius-sm)',
                       textTransform: 'uppercase',
                       letterSpacing: 0.5,
                     }}
                   >
                     {device.pendingAction}
+                  </span>
+                ) : device.firmwareUpdatePending ? (
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--accent-orange)',
+                      padding: '2px 8px',
+                      background: 'rgba(249,115,22,0.08)',
+                      border: '1px solid rgba(249,115,22,0.2)',
+                      borderRadius: 'var(--radius-sm)',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Update Staged
                   </span>
                 ) : (
                   <span className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)' }}>—</span>
