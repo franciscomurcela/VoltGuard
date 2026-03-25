@@ -1,0 +1,6 @@
+target/
+.env
+firmware_storage/
+.git
+.gitignore
+*.md

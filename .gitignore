@@ -54,5 +54,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# Claude AI artifacts
+
 /.claude

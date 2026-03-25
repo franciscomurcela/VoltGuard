@@ -1,0 +1,11 @@
+{
+  "sensors": [
+    {
+      "id": "fcb0b81a-11d8-4c34-937b-34cfd7fdc052",
+      "name": "Sensore Cacém",
+      "district": "Lisboa",
+      "metrics": ["voltage", "current", "power_factor"]
+    }
+  ],
+  "_comment": "Run 'python simulator.py --generate-config' to auto-populate from OAM"
+}

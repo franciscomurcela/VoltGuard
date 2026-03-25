@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compositor-config
+  namespace: iot-platform
+data:
+  NODE_ENV: "production"
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  KEYCLOAK_URL: "http://keycloak.iot-platform.svc.cluster.local:8080"
+  KEYCLOAK_REALM: "iot-compositor"
+  KEYCLOAK_CLIENT_ID: "compositor-backend"
+  OAM_SERVICE_URL: "http://oam-service.iot-platform.svc.cluster.local:8080"
+  NOTIFICATION_SERVICE_URL: "http://notification-service.iot-platform.svc.cluster.local:8080"
+  ANOMALY_SERVICE_URL: "http://anomaly-service.iot-platform.svc.cluster.local:8080"
+  PROXY_TIMEOUT_MS: "5000"
+  PROXY_RETRY_COUNT: "2"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  RATE_LIMIT_MAX_REQUESTS: "200"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: compositor-secrets
+  namespace: iot-platform
+type: Opaque
+stringData:
+  KEYCLOAK_CLIENT_SECRET: "change-me-in-production"
+  SESSION_SECRET: "change-me-random-secret-at-least-32-chars"

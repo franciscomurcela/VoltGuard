@@ -1,0 +1,411 @@
+openapi: 3.0.3
+info:
+  title: API Notifications (VoltGuard)
+  description: O microsserviço de Notifications atua como um Gateway Multicanal genérico e agnóstico (semelhante a plataformas como o Twilio). Ele centraliza a comunicação do sistema e roteia as mensagens para o exterior via SMS, Email ou outros canais.
+  version: 1.0.0
+
+security:
+  - AuthTokenQuery: []
+
+paths:
+  /v1/notifications:
+    post:
+      summary: Pedido de envio de uma nova notificação
+      description: Recebe o pedido e cruza a informação com a coleção user_preferences. Se o utilizador tiver o canal desativado, o envio é abortado silenciosamente. Se a preferência for immediate, dispara o Twilio/Email na hora. Se for digest, guarda a mensagem na digest_queue para envio posterior.
+      tags:
+        - Gestão de Notificações
+      operationId: v1_notifications_post
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '201':
+          description: CREATED - Notificação processada com sucesso (enviada ou colocada em fila).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: BAD REQUEST - Falha na validação dos dados de entrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: UNAUTHORIZED - Token de autenticação em falta ou inválido.
+
+    get:
+      summary: Obter histórico de notificações
+      tags:
+        - Gestão de Notificações
+      operationId: v1_notifications_get
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      parameters:
+        - name: client_id
+          in: query
+          description: ID do microsserviço remetente (ex. energy_composer).
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Máximo de registos a devolver.
+          required: false
+          schema:
+            type: integer
+            default: 25
+        - name: offset
+          in: query
+          description: Registos a saltar para paginação.
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: OK - Lista paginada de notificações.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationResponse'
+
+  /v1/notifications/{id}:
+    get:
+      summary: Consultar estado de entrega específico
+      description: Verifica se o estado é "Entregue", "Falhou" ou "Em Fila Digest".
+      tags:
+        - Gestão de Notificações
+      operationId: v1_notifications_id_get
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador único da notificação.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Retorna o estado da notificação.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '404':
+          description: NOT FOUND - Notificação não encontrada no sistema.
+
+  /v1/digest/process:
+    post:
+      summary: Processar fila de digest manualmente
+      description: Trigger manual para processar notificações em fila de digest. Útil em ambiente local/teste e reutilizável por scheduler em produção.
+      tags:
+        - Gestão de Notificações
+      operationId: v1_digest_process_post
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DigestProcessRequest'
+      responses:
+        '200':
+          description: OK - Processamento da fila concluído.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DigestProcessResponse'
+        '400':
+          description: BAD REQUEST - Parâmetros inválidos.
+
+  /v1/channels:
+    post:
+      summary: Registar novo provedor de envio dinamicamente
+      description: Permite adicionar credenciais (ex. Twilio) sem redeploy.
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_channels_post
+      x-openapi-router-controller: swagger_server.controllers.channels_controller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelRequest'
+      responses:
+        '201':
+          description: CREATED - Canal registado com sucesso.
+
+  /v1/preferences:
+    get:
+      summary: Consultar preferências atuais do utilizador
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_get
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: secret
+          in: query
+          required: true
+          description: Hash criptográfico único ligado ao utilizador.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Retorna as preferências do utilizador.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
+    patch:
+      summary: Atualizar preferências de receção (Opt-out parcial ou total)
+      description: Utiliza o método PATCH para atualizar apenas os campos modificados pelo utilizador na interface.
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_patch
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: secret
+          in: query
+          required: true
+          description: Hash criptográfico único ligado ao utilizador.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferencesUpdateRequest'
+      responses:
+        '200':
+          description: OK - Preferências atualizadas com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
+  /v1/preferences/by-user/{user_id}:
+    get:
+      summary: Consultar preferências atuais por user_id
+      tags:
+        - Gestão de Canais e Preferências
+      operationId: v1_preferences_by_user_id_get
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      security: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Identificador único do utilizador.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Retorna as preferências do utilizador.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+
+  /health:
+    get:
+      summary: Health check
+      operationId: health_get
+      x-openapi-router-controller: swagger_server.controllers.public_controller
+      tags:
+        - Gestão de Canais e Preferências
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  securitySchemes:
+    AuthTokenQuery:
+      type: apiKey
+      name: auth_token
+      in: query
+      description: Token de autenticação passado no URL.
+      x-apikeyInfoFunc: swagger_server.controllers.authorization_controller.check_AuthTokenQuery
+
+  schemas:
+    NotificationRequest:
+      type: object
+      required:
+        - client_id
+        - target
+        - channel
+        - alert_type
+        - message_template
+      properties:
+        client_id:
+          type: string
+          example: "energy_composer"
+        target:
+          type: string
+          example: "+351910000000"
+        channel:
+          type: string
+          example: "twilio_sms"
+        alert_type:
+          type: string
+          description: "critical ou warning"
+          example: "critical"
+        message_template:
+          type: string
+          example: "Alerta Crítico na subestação A."
+        variables:
+          type: object
+          additionalProperties: true
+
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "notif_890xyz"
+        client_id:
+          type: string
+          example: "energy_composer"
+        status:
+          type: string
+          example: "QUEUED_FOR_DIGEST"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-04T10:30:00Z"
+
+    ChannelRequest:
+      type: object
+      required:
+        - name
+        - provider
+        - api_key
+      properties:
+        name:
+          type: string
+          example: "twilio_sms_principal"
+        provider:
+          type: string
+          example: "twilio"
+        api_key:
+          type: string
+          example: "chave_api_123"
+
+    PreferencesResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: "op_joao_silva"
+        channels:
+          type: object
+          properties:
+            sms:
+              type: boolean
+              example: true
+            email:
+              type: boolean
+              example: true
+        alert_type:
+          type: object
+          properties:
+            critical:
+              type: string
+              example: "immediate"
+            warnings:
+              type: string
+              example: "digest"
+
+    PreferencesUpdateRequest:
+      type: object
+      properties:
+        channels:
+          type: object
+          properties:
+            sms:
+              type: boolean
+              example: false
+            email:
+              type: boolean
+              example: true
+        alert_type:
+          type: object
+          properties:
+            critical:
+              type: string
+              example: "immediate"
+            warnings:
+              type: string
+              example: "digest"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "O parâmetro 'alert_type' é obrigatório para verificar as preferências do utilizador."
+            type:
+              type: string
+              example: "ValidationException"
+            code:
+              type: integer
+              example: 400
+
+    DigestProcessRequest:
+      type: object
+      properties:
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 50
+          example: 50
+        dry_run:
+          type: boolean
+          default: false
+          example: true
+
+    DigestProcessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "processed"
+        batch_size:
+          type: integer
+          example: 50
+        queued_found:
+          type: integer
+          example: 12
+        sent:
+          type: integer
+          example: 10
+        failed:
+          type: integer
+          example: 2
+        skipped:
+          type: integer
+          example: 0
+        preview:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

@@ -1,0 +1,111 @@
+{
+  "realm": "iot-compositor",
+  "enabled": true,
+  "displayName": "IoT Compositor",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Full access — can register/delete devices, manage config"
+      },
+      {
+        "name": "operator",
+        "description": "Read-only access to dashboard and device registry"
+      }
+    ]
+  },
+
+  "defaultRoles": ["operator"],
+
+  "clients": [
+    {
+      "clientId": "compositor-frontend",
+      "name": "Compositor Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "https://compositor.example.com/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "https://compositor.example.com"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ]
+    },
+    {
+      "clientId": "compositor-backend",
+      "name": "Compositor Backend",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "protocol": "openid-connect",
+      "secret": "change-me-in-production",
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@compositor.pt",
+      "firstName": "Admin",
+      "lastName": "Compositor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "operator",
+      "email": "operator@compositor.pt",
+      "firstName": "Operator",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operator123",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["operator"]
+    }
+  ],
+
+  "scopeMappings": [
+    {
+      "client": "compositor-frontend",
+      "roles": ["admin", "operator"]
+    }
+  ]
+}
