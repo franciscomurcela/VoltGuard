@@ -1,0 +1,341 @@
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH — Keycloak
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: voltguard-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_ADMIN: http://localhost:8081
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"
+      - "9000:9000"
+    volumes:
+      - ./composer-service/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/8080 2>/dev/null && exit 0 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Backend
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-backend:
+    build:
+      context: ./composer-service/backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-compositor-backend
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: iot-compositor
+      KEYCLOAK_CLIENT_ID: compositor-backend
+      KEYCLOAK_CLIENT_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
+      SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
+      OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
+      NOTIFICATION_SERVICE_URL: http://notifications-service:8083
+      ANOMALY_SERVICE_URL: http://anomaly-api:8085
+      PROXY_TIMEOUT_MS: 8000
+      PROXY_RETRY_COUNT: 1
+      PROXY_RETRY_DELAY_MS: 500
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 200
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: http://localhost:3000
+      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      COMPOSITOR_CLIENT_ID: energy_composer
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
+      ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
+    ports:
+      - "8080:8080"
+    volumes:
+      - compositor-data:/app/data
+    depends_on:
+      oam-service:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health/live"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Frontend
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-frontend:
+    build:
+      context: ./composer-service/frontend
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-compositor-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      compositor-backend:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Database
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  notifications-db:
+    image: mongo:7.0
+    container_name: voltguard-notifications-db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications_password}
+      MONGO_INITDB_DATABASE: notifications_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - notifications-db-data:/data/db
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.adminCommand({ping:1})' --quiet"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Service
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  notifications-service:
+    build:
+      context: ./notifications-service
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-notifications-service
+    environment:
+      MONGODB_URL: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
+      MONGODB_DATABASE: notifications_db
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8083
+      AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
+      TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
+      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-alertasvoltguard@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8083:8083"
+    depends_on:
+      notifications-db:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Database (PostgreSQL)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres-oam:
+    image: postgres:17-alpine
+    container_name: voltguard-postgres-oam
+    environment:
+      POSTGRES_USER: oam_user
+      POSTGRES_PASSWORD: ${OAM_DB_PASSWORD:-oam_pass}
+      POSTGRES_DB: oam_db
+    volumes:
+      - oam-postgres-data:/var/lib/postgresql/data
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Service (Rust / Axum)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  oam-service:
+    build:
+      context: ./oam-service
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-oam-service
+    environment:
+      DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
+      SERVER_ADDR: 0.0.0.0:8080
+      FIRMWARE_STORAGE_PATH: /app/firmware_storage
+      BASE_URL: ${OAM_BASE_URL:-http://localhost:8084}
+      RUST_LOG: ${LOG_LEVEL:-info}
+    volumes:
+      - oam-firmware-storage:/app/firmware_storage
+    ports:
+      - "8084:8080"
+    depends_on:
+      postgres-oam:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — RabbitMQ (Message Broker)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: voltguard-anomaly-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-voltguard}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-voltguard123}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - anomaly-rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Redis (Result Backend)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-redis:
+    image: redis:7.2-alpine
+    container_name: voltguard-anomaly-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - anomaly-redis-data:/data
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — FastAPI (API)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-api:
+    build:
+      context: ./anomaly-detection
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-anomaly-api
+    environment:
+      REDIS_URL: redis://anomaly-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
+    ports:
+      - "8085:8085"
+    depends_on:
+      anomaly-redis:
+        condition: service_healthy
+      anomaly-rabbitmq:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8085/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Celery Worker (async job processor)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-worker:
+    build:
+      context: ./anomaly-detection
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-anomaly-worker
+    command: celery -A celery_config worker --loglevel=info --concurrency=2
+    environment:
+      REDIS_URL: redis://anomaly-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
+    depends_on:
+      anomaly-redis:
+        condition: service_healthy
+      anomaly-rabbitmq:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════
+
+volumes:
+  keycloak-data:
+  notifications-db-data:
+  compositor-data:
+  oam-postgres-data:
+  oam-firmware-storage:
+  anomaly-rabbitmq-data:
+  anomaly-redis-data:
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORK
+# ═══════════════════════════════════════════════════════════════════════════
+
+networks:
+  voltguard-network:
+   driver: bridge
