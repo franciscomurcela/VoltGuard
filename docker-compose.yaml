@@ -338,4 +338,4 @@ volumes:
 
 networks:
   voltguard-network:
-    driver: bridge
+   driver: bridge
