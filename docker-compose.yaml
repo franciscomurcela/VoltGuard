@@ -223,50 +223,6 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — RabbitMQ (Message Broker)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  anomaly-rabbitmq:
-    image: rabbitmq:3.12-management
-    container_name: voltguard-anomaly-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-voltguard}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-voltguard123}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - anomaly-rabbitmq-data:/var/lib/rabbitmq
-    networks:
-      - voltguard-network
-    healthcheck:
-      test: rabbitmq-diagnostics -q ping
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — Redis (Result Backend)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  anomaly-redis:
-    image: redis:7.2-alpine
-    container_name: voltguard-anomaly-redis
-    ports:
-      - "6380:6379"
-    volumes:
-      - anomaly-redis-data:/data
-    networks:
-      - voltguard-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
-  # ═══════════════════════════════════════════════════════════════════════════
   # ANOMALY — FastAPI (API)
   # ═══════════════════════════════════════════════════════════════════════════
 
@@ -276,16 +232,12 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: voltguard-anomaly-api
+    env_file:
+      - ./anomaly-detection/.env
     environment:
-      REDIS_URL: redis://anomaly-redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
+      VG_MONGO_URI: ""
     ports:
       - "8085:8085"
-    depends_on:
-      anomaly-redis:
-        condition: service_healthy
-      anomaly-rabbitmq:
-        condition: service_healthy
     networks:
       - voltguard-network
     healthcheck:
@@ -294,29 +246,6 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
-    restart: unless-stopped
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — Celery Worker (async job processor)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  anomaly-worker:
-    build:
-      context: ./anomaly-detection
-      dockerfile: Dockerfile
-      network: host
-    container_name: voltguard-anomaly-worker
-    command: celery -A celery_config worker --loglevel=info --concurrency=2
-    environment:
-      REDIS_URL: redis://anomaly-redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-voltguard}:${RABBITMQ_PASS:-voltguard123}@anomaly-rabbitmq:5672//
-    depends_on:
-      anomaly-redis:
-        condition: service_healthy
-      anomaly-rabbitmq:
-        condition: service_healthy
-    networks:
-      - voltguard-network
     restart: unless-stopped
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -329,8 +258,6 @@ volumes:
   compositor-data:
   oam-postgres-data:
   oam-firmware-storage:
-  anomaly-rabbitmq-data:
-  anomaly-redis-data:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NETWORK

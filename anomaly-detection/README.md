@@ -1,39 +1,37 @@
 # VoltGuard - Anomaly Detection Service
 
-Serviço de deteção de anomalias temporal para o VoltGuard com pipeline **síncrona** (FastAPI + Prophet).
+Serviço de deteção de anomalias temporal do VoltGuard com pipeline **síncrona** baseada em **FastAPI + Prophet**.
 
-## Estado atual da arquitetura
+## Arquitetura atual
 
 Fluxo principal:
 
-`Client -> FastAPI -> Prophet (treino + validação) -> Anomalies in-memory -> Forecasts`
+`Client -> FastAPI -> Prophet (treino + validação) -> Anomalias/Forecasts`
 
-- Processamento ocorre no próprio request de ingestão (`POST /v1/measurements`, `/csv`, `/import`).
-- Anomalias e metadados ficam em memória durante a execução da API.
-- Webhooks são opcionais e disparados nos eventos:
-  - `anomaly_detected`
-  - `measurement_processed`
+- O processamento é feito no próprio request de ingestão.
+- Não existe Celery/RabbitMQ/Redis no fluxo atual.
+- Persistência MongoDB é opcional; sem Mongo, a API funciona em memória.
+- Webhooks são opcionais (`anomaly_detected`, `measurement_processed`, `all`).
 
-## Estrutura do projeto (anomaly-detection)
+## Estrutura relevante
 
-- `app/main.py` - bootstrap da API e registo dos routers
-- `app/routers/` - endpoints por domínio (measurements, anomalies, models, webhooks, auth, health)
-- `app/pipeline.py` - lógica de pipeline Prophet
-- `app/state.py` - estado in-memory da aplicação
+- `app/main.py` - bootstrap da API e registo de routers
+- `app/routers/` - endpoints por domínio
+- `app/pipeline.py` - treino Prophet, forecast e deteção de anomalias
+- `app/ingestion.py` - ingestão periódica por datasets/composer
+- `app/state.py` - estado em memória + persistência opcional
 - `app/schemas.py` - contratos Pydantic
-- `app/deps.py` - dependências comuns (auth/token)
-- `validate_pipeline.ps1` - validação end-to-end automática
-- `requirements.txt` - dependências (inclui `pandas` e `prophet`)
-- `docker-compose.yaml` - infra legada (não obrigatória para o fluxo atual)
-- `API_DOCUMENTATION.md`, `ENDPOINTS_DOCS.md`, `api.yaml` - documentação auxiliar
+- `app/deps.py` - autenticação por token
+- `validate_pipeline.ps1` - validação end-to-end
+- `requirements.txt` - dependências
 
 ## Pré-requisitos
 
 - Windows + PowerShell
-- Python 3.12 (recomendado para Prophet)
-- Ambiente virtual `.venv312`
+- Python 3.12 (recomendado)
+- ambiente virtual `.venv312`
 
-## Arranque rápido
+## Arranque local (venv)
 
 ```powershell
 cd C:\mestrado\1ano\2semestre\egs\VoltGuard\anomaly-detection
@@ -50,23 +48,36 @@ py -3.12 -m venv .venv312
 ```
 
 Swagger:
-- `http://127.0.0.1:8013/docs`
+- `http://127.0.0.1:8085/docs`
 
-## Como validar tudo automaticamente
+## Arranque por Docker (apenas API)
+
+Na raiz do monorepo (`VoltGuard`):
+
+```powershell
+docker compose up -d anomaly-api
+docker compose logs -f anomaly-api
+```
+
+Health check:
+- `http://localhost:8085/v1/health`
+
+## Validação automática
 
 ```powershell
 cd C:\mestrado\1ano\2semestre\egs\VoltGuard\anomaly-detection
 powershell -ExecutionPolicy Bypass -File .\validate_pipeline.ps1
 ```
 
-## Inserção de datasets (3 modos)
+## Ingestão de datasets
 
 ### 1) JSON direto
 - Endpoint: `POST /v1/measurements`
 - Body: `source_id`, `metric_name`, `config`, `dataset[]`
-- Cada item do `dataset`: `timestamp`, `value`
+- Cada item de `dataset`: `timestamp`, `value`
 
 Exemplo:
+
 ```json
 {
   "source_id": "sensor_01",
@@ -84,51 +95,36 @@ Exemplo:
 }
 ```
 
-### 2) CSV upload local
+### 2) Upload CSV local
 - Endpoint: `POST /v1/measurements/csv`
 - `multipart/form-data`
 - Campos: `file`, `source_id`, `metric_name`, `train_ratio`, `temporal_mode`, `aggregation`, `timezone`
 
-CSV mínimo esperado:
+CSV mínimo:
+
 ```csv
 timestamp,value
 2026-03-01T00:00:00Z,220.1
 2026-03-01T01:00:00Z,221.3
 ```
 
-### 3) Import CSV remoto por URL
+### 3) Import CSV remoto (URL)
 - Endpoint: `POST /v1/measurements/import`
 - Body base: `source_url`, `source_id`, `metric_name`, `config`
 - Campos opcionais de parsing: `delimiter`, `timestamp_column`, `value_column`, `date_column`, `time_column`
 
-## Como funciona o split 80/20
+## Split treino/forecast (80/20)
 
 Após ordenar os pontos por timestamp:
 
 - `split_idx = int(total_points * train_ratio)`
-- Treino: primeiros `split_idx` pontos
-- Validação/anomalias: pontos restantes
+- treino = primeiros `split_idx`
+- forecast/validação = restantes
 
-Com `train_ratio = 0.8` e `40` pontos:
-- treino = `32`
-- validação = `8`
+Com `train_ratio=0.8` e `40` pontos:
 
-A API devolve estes valores em:
-- `rows_training`
-- `rows_forecast`
-
-## Pipeline principal (main pipeline)
-
-1. Ingestão recebe dataset e normaliza config (`train_ratio`, granularidade, agregação)
-2. Série temporal é limpa/convertida (`timestamp -> ds`, `value -> y`)
-3. Aplica agregação temporal opcional (`hourly|daily|weekly|monthly` + `mean|sum|median`)
-4. Divide em treino/validação com ratio configurável
-5. Treina Prophet com treino
-6. Compara validação com intervalo `[yhat_lower, yhat_upper]`
-7. Ponto fora do intervalo vira anomalia
-8. Guarda anomalias e metadados em memória
-9. Dispara webhooks (se ativos)
-10. Disponibiliza forecast por sensor/métrica
+- `rows_training = 32`
+- `rows_forecast = 8`
 
 ## Endpoints atuais
 
@@ -138,6 +134,8 @@ A API devolve estes valores em:
 - `POST /v1/measurements/import`
 - `GET /v1/measurements`
 - `GET /v1/measurements/{measurement_id}`
+- `GET /v1/measurements/status`
+- `PUT /v1/measurements/config`
 
 ### 2. Anomaly Registry
 - `GET /v1/anomalies`
@@ -156,52 +154,38 @@ A API devolve estes valores em:
 - `DELETE /v1/webhooks/{webhook_id}`
 
 ### 5. Health & Metrics
-- `GET /v1/health` (sem token)
+- `GET /v1/health` (público)
 - `GET /v1/metrics`
 
 ### 6. Token Management
 - `POST /v1/auth/tokens`
 - `DELETE /v1/auth/tokens/{token_id}`
 
-## Como ver detalhes de cada anomalia
-
-### Passo 1: listar anomalias
-```powershell
-$BASE = "http://127.0.0.1:8013"
-$TOKEN = "token_do_composer_123"
-$H = @{ "X-App-Token" = $TOKEN }
-
-$anoms = Invoke-RestMethod -Uri "$BASE/v1/anomalies?limit=50&offset=0" -Headers $H
-$anoms.items
-```
-
-### Passo 2: escolher ID e consultar detalhe
-```powershell
-$anomalyId = $anoms.items[0].anomaly_id
-Invoke-RestMethod -Uri "$BASE/v1/anomalies/$anomalyId" -Headers $H | ConvertTo-Json -Depth 10
-```
-
-Campos relevantes no detalhe:
-- `anomaly_id`
-- `measurement_id`
-- `source_id`
-- `timestamp`
-- `trigger_metrics` (inclui valor real e bounds)
-- `detection_method`
-- `confidence_score`
-- `severity`
-- `model_id`
-
 ## Autenticação
 
-Todos os endpoints, exceto `GET /v1/health`, exigem:
+Todos os endpoints (exceto `GET /v1/health`) exigem:
 
 ```http
 X-App-Token: token_do_composer_123
 ```
 
-## Notas de operação
+Tokens default em `.env`:
 
-- `Importing plotly failed` no Prophet é informativo (não bloqueia pipeline).
-- Webhook `404` acontece quando usas URL placeholder; para testar entrega real usa uma URL válida (ex: endpoint teu).
-- Aviso de `FutureWarning` sobre frequência `'H'` não bloqueia execução; pode ser ajustado em melhoria futura.
+- `VG_APP_TOKEN=token_do_composer_123`
+- `VG_ADMIN_TOKEN=token_admin_999`
+
+## Exemplo rápido (PowerShell)
+
+```powershell
+$BASE = "http://127.0.0.1:8013"
+$H = @{ "X-App-Token" = "token_do_composer_123" }
+
+$anoms = Invoke-RestMethod -Uri "$BASE/v1/anomalies?limit=20&offset=0" -Headers $H
+$anoms.items
+```
+
+## Notas operacionais
+
+- Mensagem `Importing plotly failed` no Prophet é informativa (não bloqueia o pipeline).
+- Webhooks com URL placeholder podem devolver `404`.
+- `VG_MONGO_URI` vazio mantém a API funcional em memória.
