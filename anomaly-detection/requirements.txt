@@ -4,11 +4,18 @@ uvicorn[standard]==0.32.0
 pydantic==2.9.0
 
 # Async Task Queue
-celery==5.4.0
-redis==5.2.0
+
+# ML / Time-series
+numpy==1.26.4
+pandas==2.2.2
+prophet==1.3.0
 
 # HTTP Client (para webhooks futuros)
 httpx==0.27.0
+pymongo==4.9.1
 
 # Utilities
 python-dateutil==2.9.0
+
+#python multipart
+python-multipart==0.0.9

@@ -1,567 +1,207 @@
 # VoltGuard - Anomaly Detection Service
 
-Serviço de deteção de anomalias para o sistema VoltGuard. Processa medições de sensores de forma assíncrona usando Celery + RabbitMQ e deteta anomalias considerando variáveis contextuais.
+Serviço de deteção de anomalias temporal para o VoltGuard com pipeline **síncrona** (FastAPI + Prophet).
 
-## 🏗️ Arquitetura
+## Estado atual da arquitetura
 
-```
-Cliente → FastAPI → RabbitMQ → Celery Worker → Redis
-                                      ↓
-                                 Deteção ML
-                                      ↓
-                                  Anomalias
-```
+Fluxo principal:
 
-### Componentes:
-- **FastAPI**: API REST com 11 endpoints
-- **RabbitMQ**: Fila de mensagens para processamento assíncrono
-- **Redis**: Armazenamento compartilhado de jobs e anomalias
-- **Celery Worker**: Processamento assíncrono com deteção de anomalias
-- **Docker Compose**: Orquestração de RabbitMQ e Redis
+`Client -> FastAPI -> Prophet (treino + validação) -> Anomalies in-memory -> Forecasts`
 
-## 🚀 Tecnologias
+- Processamento ocorre no próprio request de ingestão (`POST /v1/measurements`, `/csv`, `/import`).
+- Anomalias e metadados ficam em memória durante a execução da API.
+- Webhooks são opcionais e disparados nos eventos:
+  - `anomaly_detected`
+  - `measurement_processed`
 
-- Python 3.13
-- FastAPI 0.115.0
-- Celery 5.4.0
-- RabbitMQ 3.12
-- Redis 7.2
-- Pydantic 2.9.0
+## Estrutura do projeto (anomaly-detection)
 
-## 📋 Pré-requisitos
+- `app/main.py` - bootstrap da API e registo dos routers
+- `app/routers/` - endpoints por domínio (measurements, anomalies, models, webhooks, auth, health)
+- `app/pipeline.py` - lógica de pipeline Prophet
+- `app/state.py` - estado in-memory da aplicação
+- `app/schemas.py` - contratos Pydantic
+- `app/deps.py` - dependências comuns (auth/token)
+- `validate_pipeline.ps1` - validação end-to-end automática
+- `requirements.txt` - dependências (inclui `pandas` e `prophet`)
+- `docker-compose.yaml` - infra legada (não obrigatória para o fluxo atual)
+- `API_DOCUMENTATION.md`, `ENDPOINTS_DOCS.md`, `api.yaml` - documentação auxiliar
 
-- Docker Desktop instalado e a correr
-- Python 3.13+
-- PowerShell (Windows)
+## Pré-requisitos
 
-## ⚙️ Instalação e Execução
+- Windows + PowerShell
+- Python 3.12 (recomendado para Prophet)
+- Ambiente virtual `.venv312`
 
-### 1. Iniciar infraestrutura (RabbitMQ + Redis)
+## Arranque rápido
+
 ```powershell
 cd C:\mestrado\1ano\2semestre\egs\VoltGuard\anomaly-detection
-docker-compose up -d
+
+# criar venv (se ainda não existir)
+py -3.12 -m venv .venv312
+
+# instalar dependências
+.\.venv312\Scripts\python.exe -m pip install --upgrade pip
+.\.venv312\Scripts\python.exe -m pip install -r requirements.txt
+
+# arrancar API
+.\.venv312\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8013 --reload --log-level debug
 ```
 
-Verificar containers:
-```powershell
-docker ps
-```
+Swagger:
+- `http://127.0.0.1:8013/docs`
 
-### 2. Instalar dependências Python
-```powershell
-pip install -r requirements.txt
-```
+## Como validar tudo automaticamente
 
-### 3. Iniciar API FastAPI
-```powershell
-uvicorn main:app --reload
-```
-API disponível em: http://127.0.0.1:8000  
-Swagger UI: http://127.0.0.1:8000/docs
-
-### 4. Iniciar Celery Worker (nova janela PowerShell)
 ```powershell
 cd C:\mestrado\1ano\2semestre\egs\VoltGuard\anomaly-detection
-celery -A worker worker --loglevel=info --pool=solo
+powershell -ExecutionPolicy Bypass -File .\validate_pipeline.ps1
 ```
 
-### 5. RabbitMQ Management (opcional)
-Interface web: http://localhost:15672  
-User: `voltguard`  
-Password: `voltguard123`
+## Inserção de datasets (3 modos)
 
----
+### 1) JSON direto
+- Endpoint: `POST /v1/measurements`
+- Body: `source_id`, `metric_name`, `config`, `dataset[]`
+- Cada item do `dataset`: `timestamp`, `value`
 
-## 📡 Endpoints da API
-
-### **Autenticação**
-Todos os endpoints (exceto `/v1/health`) requerem header:
-```
-X-App-Token: token_do_composer_123
-```
-
----
-
-## 🔧 1. Ingestion Service
-
-### POST `/v1/measurements`
-**Descrição**: Recebe medições de sensores e cria jobs Celery para processamento assíncrono.
-
-**Funcionamento**:
-1. Agrupa medições por `source_id` (sensor)
-2. Cria 1 job Celery por sensor
-3. Envia jobs para fila RabbitMQ
-4. Retorna `measurement_id` imediatamente (202 Accepted)
-
-**Body**:
+Exemplo:
 ```json
 {
-  "data": [
-    {
-      "source_id": "sensor_01",
-      "timestamp": "2024-03-10T14:30:00Z",
-      "metrics": {
-        "voltage": 220.5,
-        "current": 15.2
-      },
-      "context": {
-        "hour": 14,
-        "day_of_week": 1,
-        "num_users": 50,
-        "temperature": 22.5,
-        "location": "Building A"
-      }
-    }
+  "source_id": "sensor_01",
+  "metric_name": "voltage",
+  "config": {
+    "train_ratio": 0.8,
+    "temporal_mode": "hourly",
+    "aggregation": "none",
+    "timezone": "UTC"
+  },
+  "dataset": [
+    { "timestamp": "2026-03-01T00:00:00Z", "value": 220.1 },
+    { "timestamp": "2026-03-01T01:00:00Z", "value": 221.3 }
   ]
 }
 ```
 
-**Teste PowerShell**:
+### 2) CSV upload local
+- Endpoint: `POST /v1/measurements/csv`
+- `multipart/form-data`
+- Campos: `file`, `source_id`, `metric_name`, `train_ratio`, `temporal_mode`, `aggregation`, `timezone`
+
+CSV mínimo esperado:
+```csv
+timestamp,value
+2026-03-01T00:00:00Z,220.1
+2026-03-01T01:00:00Z,221.3
+```
+
+### 3) Import CSV remoto por URL
+- Endpoint: `POST /v1/measurements/import`
+- Body base: `source_url`, `source_id`, `metric_name`, `config`
+- Campos opcionais de parsing: `delimiter`, `timestamp_column`, `value_column`, `date_column`, `time_column`
+
+## Como funciona o split 80/20
+
+Após ordenar os pontos por timestamp:
+
+- `split_idx = int(total_points * train_ratio)`
+- Treino: primeiros `split_idx` pontos
+- Validação/anomalias: pontos restantes
+
+Com `train_ratio = 0.8` e `40` pontos:
+- treino = `32`
+- validação = `8`
+
+A API devolve estes valores em:
+- `rows_training`
+- `rows_forecast`
+
+## Pipeline principal (main pipeline)
+
+1. Ingestão recebe dataset e normaliza config (`train_ratio`, granularidade, agregação)
+2. Série temporal é limpa/convertida (`timestamp -> ds`, `value -> y`)
+3. Aplica agregação temporal opcional (`hourly|daily|weekly|monthly` + `mean|sum|median`)
+4. Divide em treino/validação com ratio configurável
+5. Treina Prophet com treino
+6. Compara validação com intervalo `[yhat_lower, yhat_upper]`
+7. Ponto fora do intervalo vira anomalia
+8. Guarda anomalias e metadados em memória
+9. Dispara webhooks (se ativos)
+10. Disponibiliza forecast por sensor/métrica
+
+## Endpoints atuais
+
+### 1. Ingestion & Measurements
+- `POST /v1/measurements`
+- `POST /v1/measurements/csv`
+- `POST /v1/measurements/import`
+- `GET /v1/measurements`
+- `GET /v1/measurements/{measurement_id}`
+
+### 2. Anomaly Registry
+- `GET /v1/anomalies`
+- `GET /v1/anomalies/{anomaly_id}`
+
+### 3. Model Management
+- `GET /v1/models`
+- `GET /v1/models/{model_id}/config`
+- `PUT /v1/models/{model_id}/config`
+- `GET /v1/forecasts/{sensor_id}`
+
+### 4. Webhook Management
+- `GET /v1/webhooks`
+- `GET /v1/webhooks/{webhook_id}`
+- `POST /v1/webhooks`
+- `DELETE /v1/webhooks/{webhook_id}`
+
+### 5. Health & Metrics
+- `GET /v1/health` (sem token)
+- `GET /v1/metrics`
+
+### 6. Token Management
+- `POST /v1/auth/tokens`
+- `DELETE /v1/auth/tokens/{token_id}`
+
+## Como ver detalhes de cada anomalia
+
+### Passo 1: listar anomalias
 ```powershell
-$body = @{
-    data = @(
-        @{
-            source_id = "sensor_01"
-            timestamp = "2024-03-10T14:30:00Z"
-            metrics = @{
-                voltage = 220.5
-                current = 15.2
-            }
-            context = @{
-                hour = 14
-                day_of_week = 1
-                num_users = 50
-                temperature = 22.5
-                location = "Building A"
-            }
-        }
-    )
-} | ConvertTo-Json -Depth 10
+$BASE = "http://127.0.0.1:8013"
+$TOKEN = "token_do_composer_123"
+$H = @{ "X-App-Token" = $TOKEN }
 
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/measurements" -Method POST -Body $body -ContentType "application/json" -Headers @{"X-App-Token"="token_do_composer_123"}
+$anoms = Invoke-RestMethod -Uri "$BASE/v1/anomalies?limit=50&offset=0" -Headers $H
+$anoms.items
 ```
 
-**Response**:
-```json
-{
-  "measurement_id": "meas_42f6abc1",
-  "status": "raw"
-}
-```
-
----
-
-## 📊 2. Job Tracking Service
-
-### GET `/v1/measurements/{measurement_id}`
-**Descrição**: Consulta o status de processamento de uma submissão.
-
-**Status possíveis**:
-- `raw`: Medição recebida, aguardando processamento ou em processamento
-- `analyzed`: Processamento completo
-
-**Teste PowerShell**:
+### Passo 2: escolher ID e consultar detalhe
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/measurements/meas_42f6abc1" -Headers @{"X-App-Token"="token_do_composer_123"}
+$anomalyId = $anoms.items[0].anomaly_id
+Invoke-RestMethod -Uri "$BASE/v1/anomalies/$anomalyId" -Headers $H | ConvertTo-Json -Depth 10
 ```
 
-**Response**:
-```json
-{
-  "measurement_id": "meas_42f6abc1",
-  "status": "analyzed",
-  "anomalies_detected": true
-}
+Campos relevantes no detalhe:
+- `anomaly_id`
+- `measurement_id`
+- `source_id`
+- `timestamp`
+- `trigger_metrics` (inclui valor real e bounds)
+- `detection_method`
+- `confidence_score`
+- `severity`
+- `model_id`
+
+## Autenticação
+
+Todos os endpoints, exceto `GET /v1/health`, exigem:
+
+```http
+X-App-Token: token_do_composer_123
 ```
 
----
-
-## 🚨 3. Anomaly Registry Service
-
-### GET `/v1/anomalies`
-**Descrição**: Lista todas as anomalias com paginação e filtros.
-
-**Query Parameters**:
-- `source_id` (opcional): Filtrar por sensor
-- `limit` (default: 25): Número de resultados por página
-- `offset` (default: 0): Offset para paginação
-
-**Teste PowerShell**:
-```powershell
-# Listar todas
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/anomalies" -Headers @{"X-App-Token"="token_do_composer_123"}
-
-# Filtrar por sensor
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/anomalies?source_id=sensor_01" -Headers @{"X-App-Token"="token_do_composer_123"}
-
-# Paginação
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/anomalies?limit=10&offset=0" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-**Response**:
-```json
-{
-  "items": [
-    {
-      "anomaly_id": "ANM-20260310180518-6472",
-      "source_id": "sensor_01",
-      "timestamp": "2024-03-10T14:30:00Z",
-      "severity": "CRITICAL"
-    }
-  ],
-  "total": 5,
-  "limit": 25,
-  "offset": 0,
-  "has_more": false
-}
-```
-
-### GET `/v1/anomalies/{anomaly_id}`
-**Descrição**: Detalhes completos de uma anomalia específica.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/anomalies/ANM-20260310180518-6472" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-**Response**:
-```json
-{
-  "anomaly_id": "ANM-20260310180518-6472",
-  "source_id": "sensor_01",
-  "timestamp": "2024-03-10T14:30:00Z",
-  "trigger_metrics": {
-    "voltage": 1500.0
-  },
-  "detection_method": "ContextualMockup",
-  "confidence_score": 0.9
-}
-```
-
----
-
-## 🤖 4. Model Management Service
-
-### GET `/v1/models/config`
-**Descrição**: Configuração atual dos modelos de ML.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/models/config" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-**Response**:
-```json
-{
-  "prophet_uncertainty_interval": 0.95,
-  "pyod_contamination_rate": 0.05
-}
-```
-
-### PUT `/v1/models/config`
-**Descrição**: Atualiza configuração dos modelos.
-
-**Body**:
-```json
-{
-  "prophet_uncertainty_interval": 0.90,
-  "pyod_contamination_rate": 0.03
-}
-```
-
-**Teste PowerShell**:
-```powershell
-$config = @{
-    prophet_uncertainty_interval = 0.90
-    pyod_contamination_rate = 0.03
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/models/config" -Method PUT -Body $config -ContentType "application/json" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
----
-
-## 🔔 5. Webhook Service
-
-### POST `/v1/webhooks`
-**Descrição**: Registar webhook para notificações automáticas.
-
-**Body**:
-```json
-{
-  "target_url": "https://example.com/webhook",
-  "event_type": "anomaly_detected"
-}
-```
-
-**Event types**:
-- `anomaly_detected`: Notifica quando anomalia é detetada
-- `measurement_processed`: Notifica quando medição é processada
-- `all`: Todos os eventos
-
-**Teste PowerShell**:
-```powershell
-$webhook = @{
-    target_url = "https://webhook.site/unique-url"
-    event_type = "anomaly_detected"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/webhooks" -Method POST -Body $webhook -ContentType "application/json" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-### GET `/v1/webhooks`
-**Descrição**: Lista todos os webhooks registados.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/webhooks" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-### DELETE `/v1/webhooks/{webhook_id}`
-**Descrição**: Remove um webhook.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/webhooks/webhook_abc123" -Method DELETE -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
----
-
-## 💚 6. Health & Metrics Service
-
-### GET `/v1/health`
-**Descrição**: Health check do serviço (não requer token).
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/health"
-```
-
-**Response**:
-```json
-{
-  "status": "UP",
-  "database": "CONNECTED"
-}
-```
-
-### GET `/v1/metrics`
-**Descrição**: Métricas internas do sistema.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/metrics" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-**Response**:
-```json
-{
-  "total_measurements": 10,
-  "total_jobs": 15,
-  "jobs_completed": 12,
-  "jobs_pending": 2,
-  "jobs_processing": 1,
-  "jobs_failed": 0,
-  "total_anomalies": 5,
-  "active_webhooks": 2,
-  "avg_processing_time_ms": 150.5,
-  "model_config": { ... },
-  "uptime_seconds": 0
-}
-```
-
----
-
-## 🔑 7. Token Management Service
-
-### POST `/v1/auth/tokens`
-**Descrição**: Gera novo token de acesso.
-
-**Body**:
-```json
-{
-  "service_name": "OAM Service"
-}
-```
-
-**Teste PowerShell**:
-```powershell
-$tokenReq = @{
-    service_name = "OAM Service"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/auth/tokens" -Method POST -Body $tokenReq -ContentType "application/json" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
-**Response**:
-```json
-{
-  "token_id": "token_abc123",
-  "token": "vg_9f8e7d6c5b4a3210",
-  "service_name": "OAM Service",
-  "created_at": "2024-03-10T18:30:00Z"
-}
-```
-
-### DELETE `/v1/auth/tokens/{token_id}`
-**Descrição**: Revoga um token.
-
-**Teste PowerShell**:
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/auth/tokens/token_abc123" -Method DELETE -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
----
-
-## 🧪 Testes Completos
-
-### Teste de Fluxo Completo
-```powershell
-# 1. Enviar medição com valor anômalo
-$body = @{
-    data = @(
-        @{
-            source_id = "sensor_test"
-            timestamp = "2024-03-10T18:30:00Z"
-            metrics = @{
-                voltage = 2000.0
-                current = 300.0
-            }
-            context = @{
-                hour = 18
-                day_of_week = 1
-                num_users = 80
-            }
-        }
-    )
-} | ConvertTo-Json -Depth 10
-
-$result = Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/measurements" -Method POST -Body $body -ContentType "application/json" -Headers @{"X-App-Token"="token_do_composer_123"}
-$result
-
-# 2. Aguardar processamento
-Start-Sleep -Seconds 2
-
-# 3. Verificar status
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/measurements/$($result.measurement_id)" -Headers @{"X-App-Token"="token_do_composer_123"}
-
-# 4. Listar anomalias
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/anomalies" -Headers @{"X-App-Token"="token_do_composer_123"}
-
-# 5. Ver métricas
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/v1/metrics" -Headers @{"X-App-Token"="token_do_composer_123"}
-```
-
----
-
-## 🔍 Deteção de Anomalias
-
-### Lógica Atual (Mockup)
-- **Base**: 30% probabilidade de deteção
-- **Ajustes contextuais**:
-  - Peak hours (9h-18h): -30% probabilidade
-  - Fim de semana: -20% probabilidade
-  - Muitos utilizadores (>100): -40% probabilidade
-  - Valores extremos (>1000 ou <0): 90% probabilidade
-
-### Níveis de Severidade
-- **LOW**: |valor| ≤ 100
-- **MEDIUM**: 100 < |valor| ≤ 500
-- **HIGH**: 500 < |valor| ≤ 1000
-- **CRITICAL**: |valor| > 1000
-
-### Variáveis Contextuais
-- `hour`: Hora do dia (0-23)
-- `day_of_week`: Dia da semana (0=Segunda, 6=Domingo)
-- `num_users`: Número de utilizadores ativos
-- `temperature`: Temperatura ambiente (°C)
-- `location`: Localização geográfica
-- `custom_fields`: Campos personalizados
-
----
-
-## 🌐 Variáveis de Ambiente
-
-```bash
-# RabbitMQ
-RABBITMQ_URL=amqp://voltguard:voltguard123@localhost:5672//
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Erro: "Docker engine não encontrado"
-```powershell
-# Iniciar Docker Desktop e aguardar até ícone ficar estável
-```
-
-### Erro: "Module 'celery' not found"
-```powershell
-pip install -r requirements.txt
-```
-
-### Worker não conecta ao RabbitMQ
-```powershell
-# Verificar se containers estão a correr
-docker ps
-
-# Ver logs do RabbitMQ
-docker logs anomaly-detection-rabbitmq-1
-```
-
-### Anomalias não aparecem na API
-```powershell
-# Limpar Redis e reiniciar serviços
-docker exec -it anomaly-detection-redis-1 redis-cli FLUSHALL
-```
-
-### Celery no Windows
-  Usar sempre `--pool=solo`:
-```powershell
-celery -A worker worker --loglevel=info --pool=solo
-```
-
----
-
-## 📁 Estrutura do Projeto
-
-```
-anomaly-detection/
-├── main.py              # FastAPI app com 11 endpoints
-├── worker.py            # Celery worker com deteção de anomalias
-├── celery_config.py     # Configuração Celery
-├── requirements.txt     # Dependências Python
-├── docker-compose.yaml  # RabbitMQ + Redis
-├── api.yaml            # Especificação OpenAPI 3.0
-└── README.md           # Este ficheiro
-```
-
----
-
-## 📚 Documentação Adicional
-
-- **Swagger UI**: http://127.0.0.1:8000/docs
-- **ReDoc**: http://127.0.0.1:8000/redoc
-- **OpenAPI JSON**: http://127.0.0.1:8000/openapi.json
-
----
-
-## 🚀 Próximos Passos
-
-- [ ] Integrar Prophet para deteção temporal
-- [ ] Integrar PyOD para deteção de outliers
-- [ ] Adicionar MongoDB para persistência
-- [ ] Implementar webhooks funcionais
-- [ ] Dashboard de monitorização
-- [ ] Testes unitários e integração
-- [ ] CI/CD pipeline
-
----
-
-## 👥 Autores
-
-VoltGuard Team - EGS 2024/2026
+## Notas de operação
+
+- `Importing plotly failed` no Prophet é informativo (não bloqueia pipeline).
+- Webhook `404` acontece quando usas URL placeholder; para testar entrega real usa uma URL válida (ex: endpoint teu).
+- Aviso de `FutureWarning` sobre frequência `'H'` não bloqueia execução; pode ser ajustado em melhoria futura.
