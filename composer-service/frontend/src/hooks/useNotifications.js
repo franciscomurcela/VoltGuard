@@ -15,6 +15,9 @@ export default function useNotifications() {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState(null)
+  const [lastSent, setLastSent] = useState(null)
 
   const fetchNotifications = useCallback(async (params = {}) => {
     try {
@@ -40,6 +43,27 @@ export default function useNotifications() {
     fetchNotifications()
   }, [fetchNotifications])
 
+  // POST /v1/notifications
+  // payload: { target, channel, alert_type, message_template }
+  // client_id is injected by the proxy automatically
+  const sendNotification = useCallback(async (payload) => {
+    setSending(true)
+    setSendError(null)
+    try {
+      const res = await notificationsApi.send(payload)
+      setLastSent(res.data || res)
+      await fetchNotifications()
+      return res
+    } catch (err) {
+      console.error('[useNotifications] Send failed:', err)
+      const message = err?.response?.data?.error?.message || err.message || 'Failed to send notification'
+      setSendError(message)
+      throw err
+    } finally {
+      setSending(false)
+    }
+  }, [fetchNotifications])
+
   const stats = notifications.reduce(
     (acc, n) => {
       acc.total++
@@ -57,5 +81,11 @@ export default function useNotifications() {
     loading,
     error,
     refetch: fetchNotifications,
+    sendNotification,
+    sending,
+    sendError,
+    lastSent,
+    clearSendError: () => setSendError(null),
+    clearLastSent: () => setLastSent(null),
   }
 }
