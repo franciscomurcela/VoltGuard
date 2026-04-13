@@ -4,6 +4,7 @@ from datetime import datetime
 import random
 import logging
 import httpx
+import os
 from app.schemas import DatasetAnalysisConfig
 
 from .state import (
@@ -189,26 +190,69 @@ def _parse_csv_points(
 
 
 async def _dispatch_webhook_event(event_type: str, payload: Dict[str, Any]) -> None:
-    if not db_webhooks:
+    dispatch_targets: List[Dict[str, Any]] = []
+
+    dispatch_targets.extend(db_webhooks.values())
+
+    composer_webhook_url = os.getenv("VG_COMPOSER_WEBHOOK_URL", "").strip()
+    composer_base_url = os.getenv("VG_COMPOSER_BASE_URL", "").strip().rstrip("/")
+    composer_webhook_path = os.getenv("VG_COMPOSER_WEBHOOK_PATH", "").strip()
+
+    if not composer_webhook_url and composer_base_url and composer_webhook_path:
+        suffix = composer_webhook_path if composer_webhook_path.startswith("/") else f"/{composer_webhook_path}"
+        composer_webhook_url = f"{composer_base_url}{suffix}"
+
+    if composer_webhook_url:
+        dispatch_targets.append(
+            {
+                "webhook_id": "composer_default",
+                "target_url": composer_webhook_url,
+                "event_type": "all",
+                "status": "active",
+                "use_composer_auth": True,
+            }
+        )
+
+    if not dispatch_targets:
         return
 
     async with httpx.AsyncClient(timeout=5.0) as client:
-        for webhook in db_webhooks.values():
+        visited: set[str] = set()
+        composer_token = os.getenv("VG_COMPOSER_TOKEN", "").strip()
+
+        for webhook in dispatch_targets:
             webhook_event = webhook.get("event_type")
             webhook_status = webhook.get("status")
+            target_url = webhook.get("target_url")
+
+            if not target_url:
+                continue
             if webhook_status != "active":
                 continue
             if webhook_event not in [event_type, "all"]:
                 continue
 
+            dedupe_key = f"{target_url}:{webhook_event}"
+            if dedupe_key in visited:
+                continue
+            visited.add(dedupe_key)
+
+            headers = None
+            if webhook.get("use_composer_auth") and composer_token:
+                headers = {
+                    "Authorization": f"Bearer {composer_token}",
+                    "X-App-Token": composer_token,
+                }
+
             try:
                 response = await client.post(
-                    webhook.get("target_url"),
+                    target_url,
                     json={
                         "event_type": event_type,
                         "sent_at": datetime.utcnow().isoformat(),
                         "payload": payload,
                     },
+                    headers=headers,
                 )
                 if response.status_code >= 400:
                     logger.warning(f"⚠️ Webhook {webhook.get('webhook_id')} respondeu {response.status_code}")
