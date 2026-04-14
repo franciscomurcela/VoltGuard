@@ -49,20 +49,8 @@ export async function getSummary(req, res, next) {
  */
 export async function getModelConfig(req, res, next) {
   try {
-    const url = anomalyProxy.getServiceUrl
-    // Use the proxy client directly for model config
-    const client = (await import('../utils/proxyClient.js')).default
-    const { forwardHeaders } = await import('../utils/proxyClient.js')
-    const { getServiceUrl } = await import('../utils/serviceDiscovery.js')
-
-    const APP_TOKEN = process.env.ANOMALY_APP_TOKEN || 'token_do_composer_123'
-    const headers = forwardHeaders(req)
-    delete headers.Authorization
-    headers['X-App-Token'] = APP_TOKEN
-
-    const apiUrl = getServiceUrl('anomaly', '/v1/models/config')
-    const response = await client.get(apiUrl, { headers })
-    res.json(response.data)
+    const data = await anomalyProxy.getModelConfig(req)
+    res.json(data)
   } catch (err) {
     next(err)
   }
@@ -73,20 +61,9 @@ export async function getModelConfig(req, res, next) {
  */
 export async function updateModelConfig(req, res, next) {
   try {
-    const client = (await import('../utils/proxyClient.js')).default
-    const { forwardHeaders } = await import('../utils/proxyClient.js')
-    const { getServiceUrl } = await import('../utils/serviceDiscovery.js')
-
-    const APP_TOKEN = process.env.ANOMALY_APP_TOKEN || 'token_do_composer_123'
-    const headers = forwardHeaders(req)
-    delete headers.Authorization
-    headers['X-App-Token'] = APP_TOKEN
-
-    const apiUrl = getServiceUrl('anomaly', '/v1/models/config')
-    const response = await client.put(apiUrl, req.body, { headers })
-
+    const data = await anomalyProxy.updateModelConfig(req, req.body)
     logger.info({ config: req.body }, 'Model config updated via compositor')
-    res.json(response.data)
+    res.json(data)
   } catch (err) {
     next(err)
   }

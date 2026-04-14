@@ -24,6 +24,10 @@ import notificationRoutes from './routes/notifications.js'
 import anomalyRoutes from './routes/anomalies.js'
 import firmwareRoutes from './routes/firmwares.js'
 import preferencesRoutes from './routes/preferences.js'
+import measurementRoutes from './routes/measurements.js'
+import webhookRoutes from './routes/webhooks.js'
+import { registerAnomalyWebhook } from './services/webhookRegistration.js'
+import { processDigest } from './services/notificationProxy.js'
 
 // ─── Docs setup ─────────────────────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -88,6 +92,8 @@ app.use(
 // Health routes are public (no auth) — K8s probes need unauthenticated access
 app.use('/api/health', healthRoutes)
 app.use('/api/public', preferencesRoutes)
+// Internal webhook receiver — called by peer services, no user auth
+app.use('/api/webhooks', webhookRoutes)
 
 // Protected routes
 app.use('/api/devices', deviceRoutes)
@@ -95,6 +101,7 @@ app.use('/api/metrics', metricsRoutes)
 app.use('/api/districts', districtRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/anomalies', anomalyRoutes)
+app.use('/api/measurements', measurementRoutes)
 app.use('/api/firmwares', firmwareRoutes)
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────
@@ -113,6 +120,28 @@ const PORT = config.server.port
 
 async function start() {
   await initDatabase()
+
+  // Register compositor as webhook consumer on the anomaly service.
+  // Non-blocking — a failed registration only means automatic notifications
+  // won't fire until the next restart, not that the server can't start.
+  registerAnomalyWebhook().catch((err) =>
+    logger.warn({ err: err.message }, 'Anomaly webhook registration failed on startup'),
+  )
+
+  // Periodically flush the notifications digest queue.
+  // Defaults to every hour; override with DIGEST_INTERVAL_MS env var.
+  const digestIntervalMs = parseInt(process.env.DIGEST_INTERVAL_MS, 10) || 3600000
+  const digestInterval = setInterval(async () => {
+    try {
+      const result = await processDigest({ batchSize: 50 })
+      if (result.queued_found > 0) {
+        logger.info({ result }, 'Digest queue flushed')
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Digest queue flush failed')
+    }
+  }, digestIntervalMs)
+  logger.info({ intervalMs: digestIntervalMs }, 'Digest scheduler started')
 
   const purgeInterval = setInterval(cachePurge, 60000)
 
@@ -133,6 +162,7 @@ async function start() {
   const shutdown = (signal) => {
     logger.info({ signal }, 'Shutting down...')
     clearInterval(purgeInterval)
+    clearInterval(digestInterval)
     server.close(() => {
       closeDatabase()
       process.exit(0)

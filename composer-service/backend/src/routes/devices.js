@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import {
   listDevices,
@@ -7,12 +8,14 @@ import {
   modifyDevice,
   removeDevice,
   deviceStats,
+  importDevices,
   dispatchAction,
   reportAnomaly,
   sendKeepalive,
 } from '../controllers/deviceController.js'
 
 const router = Router()
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }) // 5 MB
 
 // All device routes require authentication
 router.use(requireAuth)
@@ -24,6 +27,7 @@ router.get('/:id', getDevice)
 
 // Write — admin role only
 router.post('/', requireRole('admin'), registerDevice)
+router.post('/import', requireRole('admin'), upload.single('file'), importDevices)
 router.put('/:id', requireRole('admin'), modifyDevice)
 router.delete('/:id', requireRole('admin'), removeDevice)
 

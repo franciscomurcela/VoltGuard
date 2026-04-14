@@ -1,4 +1,5 @@
 import * as notificationProxy from '../services/notificationProxy.js'
+import logger from '../utils/logger.js'
 
 /**
  * GET /api/notifications
@@ -35,6 +36,25 @@ export async function send(req, res, next) {
   try {
     const data = await notificationProxy.sendNotification(req, req.body)
     res.status(201).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/notifications/digest/process  (admin only)
+ * Manually triggers digest queue processing.
+ * Body: { batch_size?: number, dry_run?: boolean }
+ */
+export async function triggerDigest(req, res, next) {
+  try {
+    const { batch_size, dry_run } = req.body ?? {}
+    const data = await notificationProxy.processDigest({
+      batchSize: batch_size,
+      dryRun:    dry_run,
+    })
+    logger.info({ result: data }, 'Digest queue processed via admin endpoint')
+    res.json(data)
   } catch (err) {
     next(err)
   }
