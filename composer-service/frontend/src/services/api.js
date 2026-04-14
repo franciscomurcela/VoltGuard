@@ -1,5 +1,12 @@
 import axios from 'axios'
 
+function generateIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `notif-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
@@ -84,7 +91,12 @@ export const anomaliesApi = {
 export const notificationsApi = {
   getAll: (params) => api.get('/notifications', { params }),
   getById: (id) => api.get(`/notifications/${id}`),
-  send: (data) => api.post('/notifications', data),
+  send: (data, options = {}) => {
+    const idempotencyKey = options.idempotencyKey || generateIdempotencyKey()
+    return api.post('/notifications', data, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
+  },
 }
 
 export const preferencesApi = {

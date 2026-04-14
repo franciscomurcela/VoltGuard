@@ -21,10 +21,17 @@ def get_db():
         _db.notifications.create_index(
             [('client_id', ASCENDING), ('created_at', DESCENDING)]
         )
+        _db.notifications.create_index(
+            [('client_id', ASCENDING), ('idempotency_key', ASCENDING)],
+            unique=True,
+            partialFilterExpression={'idempotency_key': {'$type': 'string'}},
+        )
         _db.user_preferences.create_index([('secret', ASCENDING)], unique=True)
         _db.user_preferences.create_index([('targets.sms', ASCENDING)])
         _db.user_preferences.create_index([('targets.email', ASCENDING)])
         _db.digest_queue.create_index([('status', ASCENDING), ('queued_at', DESCENDING)])
+        _db.notification_audit.create_index([('notification_id', ASCENDING), ('created_at', DESCENDING)])
+        _db.notification_audit.create_index([('event_type', ASCENDING), ('created_at', DESCENDING)])
 
         if os.environ.get('SEED_DEFAULT_PREFERENCES', 'true').lower() == 'true':
             seed_default_preferences(_db)

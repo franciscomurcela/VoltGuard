@@ -58,6 +58,12 @@ export function forwardHeaders(req) {
   if (req.headers.authorization) {
     headers.Authorization = req.headers.authorization
   }
+  if (req.headers['idempotency-key']) {
+    headers['Idempotency-Key'] = req.headers['idempotency-key']
+  }
+  if (req.headers['x-idempotency-key']) {
+    headers['X-Idempotency-Key'] = req.headers['x-idempotency-key']
+  }
   headers['X-Correlation-ID'] = req.headers['x-correlation-id'] || randomUUID()
   return headers
 }
