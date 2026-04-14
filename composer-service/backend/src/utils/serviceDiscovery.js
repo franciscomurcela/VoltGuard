@@ -13,13 +13,13 @@ const services = {
   },
   notification: {
     name: 'Notification Service',
-    baseUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:8082',
-    healthPath: '/api/health',
+    baseUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:8083',
+    healthPath: '/health',
   },
   anomaly: {
     name: 'Anomaly Detection',
-    baseUrl: process.env.ANOMALY_SERVICE_URL || 'http://localhost:8083',
-    healthPath: '/api/health',
+    baseUrl: process.env.ANOMALY_SERVICE_URL || 'http://localhost:8085',
+    healthPath: '/v1/health',
   },
 }
 

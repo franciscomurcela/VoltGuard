@@ -30,6 +30,23 @@ export async function createDevice(req, deviceData) {
   return res.data
 }
 
+/**
+ * POST /sensors/import — bulk-register sensors from a CSV file.
+ * CSV columns: name, district, firmware_id (firmware_id optional UUID)
+ * @param {import('form-data')} formData - pre-built FormData with the 'file' field
+ */
+export async function importDevices(req, formData) {
+  const url = getServiceUrl('oam', '/sensors/import')
+  const res = await client.post(url, formData, {
+    headers: {
+      ...forwardHeaders(req),
+      ...formData.getHeaders(),
+    },
+    maxBodyLength: Infinity,
+  })
+  return res.data
+}
+
 export async function updateDevice(req, id, deviceData) {
   // OAM uses PATCH, not PUT
   const url = getServiceUrl('oam', `/sensors/${id}`)

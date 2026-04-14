@@ -53,6 +53,25 @@ export async function sendNotification(req, notificationData) {
   return res.data
 }
 
+/**
+ * POST /v1/digest/process — flush the digest queue
+ * Called on a schedule by the compositor, and also available as a manual admin endpoint.
+ * Does not need a req object — the notifications service authenticates via its own auth_token.
+ *
+ * @param {object} opts
+ * @param {number} [opts.batchSize=50]  - how many queued entries to process (1-500)
+ * @param {boolean} [opts.dryRun=false] - if true, returns a preview without sending
+ */
+export async function processDigest({ batchSize = 50, dryRun = false } = {}) {
+  const url = getServiceUrl('notification', '/v1/digest/process')
+  const res = await client.post(
+    url,
+    { batch_size: batchSize, dry_run: dryRun },
+    { params: { auth_token: AUTH_TOKEN } },
+  )
+  return res.data
+}
+
 export async function getNotificationHealth() {
   try {
     const url = getServiceUrl('notification', '/health')

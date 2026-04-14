@@ -73,29 +73,151 @@ export async function getAnomalySummary(req) {
 }
 
 /**
- * POST /v1/measurements — submit sensor data for anomaly detection
- * Called by the compositor when it wants to trigger analysis.
+ * POST /v1/measurements — submit sensor data (JSON) for anomaly detection
  */
 export async function submitMeasurements(req, measurementData) {
-  const url = getServiceUrl("anomaly", "/v1/measurements");
-  const res = await client.post(url, measurementData, {
-    headers: anomalyHeaders(req),
-  });
-  return res.data;
+  const url = getServiceUrl('anomaly', '/v1/measurements')
+  const res = await client.post(url, measurementData, { headers: anomalyHeaders(req) })
+  return res.data
 }
 
 /**
- * GET /v1/measurements/:id — check job status
+ * POST /v1/measurements/csv — forward a CSV multipart upload
+ * @param {import('form-data')} formData - pre-built FormData with file + fields
  */
-export async function getMeasurementStatus(req, measurementId) {
+export async function submitMeasurementsCsv(req, formData) {
+  const url = getServiceUrl('anomaly', '/v1/measurements/csv')
+  const headers = { ...anomalyHeaders(req), ...formData.getHeaders() }
+  const res = await client.post(url, formData, { headers, maxBodyLength: Infinity })
+  return res.data
+}
+
+/**
+ * POST /v1/measurements/import — import measurements from a remote CSV URL
+ */
+export async function importMeasurements(req, body) {
+  const url = getServiceUrl('anomaly', '/v1/measurements/import')
+  const res = await client.post(url, body, { headers: anomalyHeaders(req) })
+  return res.data
+}
+
+/**
+ * GET /v1/measurements — list all measurements, optionally filtered by source_id
+ */
+export async function listMeasurements(req, sourceId) {
   return withRetry(
     async () => {
-      const url = getServiceUrl("anomaly", `/v1/measurements/${measurementId}`);
-      const res = await client.get(url, { headers: anomalyHeaders(req) });
-      return res.data;
+      const url = getServiceUrl('anomaly', '/v1/measurements')
+      const res = await client.get(url, {
+        headers: anomalyHeaders(req),
+        params: sourceId ? { source_id: sourceId } : undefined,
+      })
+      return res.data
     },
     { label: LABEL },
-  );
+  )
+}
+
+/**
+ * GET /v1/measurements/:id — single measurement metadata
+ */
+export async function getMeasurementById(req, measurementId) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', `/v1/measurements/${measurementId}`)
+      const res = await client.get(url, { headers: anomalyHeaders(req) })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * GET /v1/measurements/status — periodic ingestion status
+ */
+export async function getIngestionStatus(req) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', '/v1/measurements/status')
+      const res = await client.get(url, { headers: anomalyHeaders(req) })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * PUT /v1/measurements/config — update periodic ingestion configuration
+ */
+export async function updateIngestionConfig(req, body) {
+  const url = getServiceUrl('anomaly', '/v1/measurements/config')
+  const res = await client.put(url, body, { headers: anomalyHeaders(req) })
+  return res.data
+}
+
+/**
+ * GET /v1/models — list available AI models
+ */
+export async function listModels(req) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', '/v1/models')
+      const res = await client.get(url, { headers: anomalyHeaders(req) })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * GET /v1/forecasts/:sensorId — forecast future values for a sensor
+ */
+export async function getForecast(req, sensorId, params = {}) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', `/v1/forecasts/${sensorId}`)
+      const res = await client.get(url, {
+        headers: anomalyHeaders(req),
+        params: {
+          periods:     params.periods     || 24,
+          metric_name: params.metricName  || 'voltage',
+          model_id:    params.modelId     || 'model_prophet_v1',
+        },
+      })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+// The anomaly service currently ships a single model. The ID is the path
+// parameter required by GET/PUT /v1/models/{model_id}/config.
+const DEFAULT_MODEL_ID = process.env.ANOMALY_DEFAULT_MODEL_ID || 'model_prophet_v1'
+
+/**
+ * GET /v1/models/{model_id}/config
+ */
+export async function getModelConfig(req) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', `/v1/models/${DEFAULT_MODEL_ID}/config`)
+      const res = await client.get(url, { headers: anomalyHeaders(req) })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * PUT /v1/models/{model_id}/config
+ * The anomaly service validates that body.model_id === path model_id,
+ * so we always inject it here before forwarding.
+ */
+export async function updateModelConfig(req, configBody) {
+  const url = getServiceUrl('anomaly', `/v1/models/${DEFAULT_MODEL_ID}/config`)
+  const payload = { ...configBody, model_id: DEFAULT_MODEL_ID }
+  const res = await client.put(url, payload, { headers: anomalyHeaders(req) })
+  return res.data
 }
 
 /**

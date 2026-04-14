@@ -1,3 +1,4 @@
+import FormData from 'form-data'
 import * as deviceService from '../services/deviceService.js'
 import * as oam from '../services/oamProxy.js'
 import { auditLog } from '../config/database.js'
@@ -53,6 +54,31 @@ export async function deviceStats(req, res, next) {
   try {
     const stats = await deviceService.getDeviceStats(req)
     res.json(stats)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/devices/import  (admin only)
+ * Bulk-registers sensors from a CSV file.
+ * CSV format: name,district,firmware_id  (header row required; firmware_id optional)
+ */
+export async function importDevices(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Missing file', message: 'A .csv file is required' })
+    }
+
+    const form = new FormData()
+    form.append('file', req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype || 'text/csv',
+    })
+
+    const data = await oam.importDevices(req, form)
+    logger.info({ created: data.created?.length, failed: data.failed?.length }, 'Bulk device import completed')
+    res.json(data)
   } catch (err) {
     next(err)
   }
