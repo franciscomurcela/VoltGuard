@@ -80,7 +80,7 @@ async def get_forecast(
             )
 
         last_date = datetime.now()
-        future_dates = pd.date_range(start=last_date, periods=periods + 1, freq="H")[1:]
+        future_dates = pd.date_range(start=last_date, periods=periods + 1, freq="h")[1:]
         future_df = pd.DataFrame({"ds": future_dates})
 
         forecast = model.predict(future_df)

@@ -2,6 +2,26 @@ import FormData from 'form-data'
 import * as anomalyProxy from '../services/anomalyProxy.js'
 import logger from '../utils/logger.js'
 
+function normalizeMeasurementPayload(body = {}) {
+  const source_id = body.source_id ?? body.sensor_id
+  const metric_name = body.metric_name ?? body.metric ?? 'voltage'
+  const rawDataset = body.dataset ?? body.data
+
+  const dataset = Array.isArray(rawDataset)
+    ? rawDataset.map((point) => ({
+        timestamp: point?.timestamp ?? point?.ts ?? point?.datetime ?? point?.date,
+        value: Number(point?.value ?? point?.y ?? point?.metric_value),
+      }))
+    : rawDataset
+
+  return {
+    ...body,
+    source_id,
+    metric_name,
+    dataset,
+  }
+}
+
 /**
  * GET /api/measurements
  * Query: ?source_id=<sensor_id>
@@ -45,7 +65,36 @@ export async function getMeasurement(req, res, next) {
  */
 export async function uploadMeasurementsJson(req, res, next) {
   try {
-    const data = await anomalyProxy.submitMeasurements(req, req.body)
+    const payload = normalizeMeasurementPayload(req.body)
+
+    if (!payload.source_id || !payload.metric_name || !Array.isArray(payload.dataset)) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Body must include source_id, metric_name and dataset[] (or legacy sensor_id + data[])',
+      })
+    }
+
+    if (payload.dataset.length < 6) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'dataset must contain at least 6 points',
+      })
+    }
+
+    const hasInvalidPoint = payload.dataset.some((point) => {
+      const hasTimestamp = typeof point.timestamp === 'string' && point.timestamp.trim().length > 0
+      const hasNumericValue = Number.isFinite(point.value)
+      return !hasTimestamp || !hasNumericValue
+    })
+
+    if (hasInvalidPoint) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Each dataset item must include timestamp (string) and value (number)',
+      })
+    }
+
+    const data = await anomalyProxy.submitMeasurements(req, payload)
     res.status(202).json(data)
   } catch (err) {
     next(err)

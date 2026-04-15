@@ -337,14 +337,15 @@ paths:
             schema:
               $ref: '#/components/schemas/MeasurementUploadRequest'
             example:
-              sensor_id: sensor_aveiro_01
-              data:
+              source_id: sensor_aveiro_01
+              metric_name: voltage
+              dataset:
                 - timestamp: '2026-03-01T00:00:00Z'
                   value: 230.5
                 - timestamp: '2026-03-01T01:00:00Z'
                   value: 231.1
       responses:
-        '200':
+        '202':
           description: Measurement job accepted — returns job/dataset metadata
           content:
             application/json:
@@ -1205,12 +1206,15 @@ components:
       description: >
         Historical sensor measurements for Prophet/PyOD analysis.
         Forwarded as-is to POST /v1/measurements on the Anomaly service.
-      required: [sensor_id, data]
+      required: [source_id, metric_name, dataset]
       properties:
-        sensor_id:
+        source_id:
           type: string
           description: Sensor/source identifier
-        data:
+        metric_name:
+          type: string
+          description: Metric name, e.g. voltage
+        dataset:
           type: array
           description: Time-series data points
           items:
@@ -1231,16 +1235,21 @@ components:
       type: object
       description: Forwarded as-is from the Anomaly Detection service (DatasetUploadResponse)
       properties:
-        id:
+        measurement_id:
           type: string
           description: Measurement/job ID — use with GET /api/measurements/{id}
-        sensor_id:
+        source_id:
+          type: string
+        metric_name:
           type: string
         status:
           type: string
-        created_at:
-          type: string
-          format: date-time
+        rows_received:
+          type: integer
+        rows_training:
+          type: integer
+        rows_forecast:
+          type: integer
 
     MeasurementStatus:
       type: object

@@ -17,6 +17,12 @@ export default function errorHandler(err, req, res, _next) {
     const upstreamStatus = err.response?.status
     const status = upstreamStatus || 502
     const internalUrl = err.config?.url || 'unknown'
+    const upstreamData = err.response?.data
+    const upstreamDetails = Array.isArray(upstreamData?.detail)
+      ? upstreamData.detail
+      : upstreamData?.detail
+        ? [upstreamData.detail]
+        : undefined
 
     logger.error(
       { status, url: internalUrl, code: err.code, method: err.config?.method },
@@ -31,6 +37,7 @@ export default function errorHandler(err, req, res, _next) {
         : err.code === 'ECONNREFUSED'
           ? 'Upstream service unavailable'
           : `Upstream service returned an error`,
+      details: upstreamDetails,
       // Only expose the service name in dev, never the URL
       ...(isDev && { _debug: { url: internalUrl, code: err.code } }),
     })
