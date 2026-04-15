@@ -71,6 +71,18 @@ powershell -ExecutionPolicy Bypass -File .\validate_pipeline.ps1
 
 ## Ingestão de datasets
 
+No fluxo acordado com o Composer, a ingestão continua por datasets, mas os datasets podem ser fornecidos pelo Composer via POST.
+
+Configuração recomendada no `.env`:
+
+- `VG_INGESTION_MODE=datasets`
+- `VG_COMPOSER_BASE_URL=http://127.0.0.1:8000`
+- `VG_COMPOSER_DATASETS_POST_PATH=/v1/anomalies/datasets/push`
+- `VG_COMPOSER_TIMEOUT_SECONDS=20`
+- `VG_COMPOSER_TOKEN=` (se necessário)
+
+Se o endpoint de POST do Composer não estiver disponível, a API usa fallback para as URLs de dataset configuradas em `VG_DATASET_1_URL`/`VG_DATASET_2_URL`.
+
 ### 1) JSON direto
 - Endpoint: `POST /v1/measurements`
 - Body: `source_id`, `metric_name`, `config`, `dataset[]`
@@ -187,5 +199,5 @@ $anoms.items
 ## Notas operacionais
 
 - Mensagem `Importing plotly failed` no Prophet é informativa (não bloqueia o pipeline).
-- Webhooks com URL placeholder podem devolver `404`.
+- Para enviar eventos para o Composer por default, usa `VG_COMPOSER_WEBHOOK_URL` (ou `VG_COMPOSER_WEBHOOK_PATH`).
 - `VG_MONGO_URI` vazio mantém a API funcional em memória.

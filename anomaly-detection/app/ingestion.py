@@ -21,13 +21,15 @@ class PeriodicIngestionService:
         self.config: Dict[str, Any] = {
             "enabled": os.getenv("VG_PERIODIC_INGESTION_ENABLED", "0") == "1",
             "interval_seconds": int(os.getenv("VG_INGESTION_INTERVAL_SECONDS", "300")),
-            "ingestion_mode": os.getenv("VG_INGESTION_MODE", "datasets").strip().lower(),
+            "ingestion_mode": os.getenv("VG_INGESTION_MODE", "composer_push").strip().lower(),
             "composer_base_url": os.getenv("VG_COMPOSER_BASE_URL", "").strip(),
             "sensors_path": os.getenv("VG_COMPOSER_SENSORS_PATH", "/v1/sensors").strip(),
             "measurements_path_template": os.getenv(
                 "VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE",
                 "/v1/sensors/{sensor_id}/measurements?limit={limit}",
             ).strip(),
+            "composer_datasets_post_path": os.getenv("VG_COMPOSER_DATASETS_POST_PATH", "").strip(),
+            "composer_timeout_seconds": int(os.getenv("VG_COMPOSER_TIMEOUT_SECONDS", "20")),
             "composer_token": os.getenv("VG_COMPOSER_TOKEN", "").strip(),
             "measurements_limit": int(os.getenv("VG_COMPOSER_MEASUREMENTS_LIMIT", "500")),
             "default_metric_name": os.getenv("VG_DEFAULT_METRIC_NAME", "voltage").strip(),
@@ -121,6 +123,65 @@ class PeriodicIngestionService:
             "Authorization": f"Bearer {token}",
             "X-App-Token": token,
         }
+
+    def _timeout(self) -> httpx.Timeout:
+        timeout_seconds = max(5, int(self.config.get("composer_timeout_seconds", 20)))
+        return httpx.Timeout(timeout_seconds, connect=min(5.0, float(timeout_seconds)))
+
+    async def _fetch_datasets_from_composer(self, client: httpx.AsyncClient) -> List[Dict[str, Any]]:
+        base_url = self.config.get("composer_base_url", "").strip().rstrip("/")
+        post_path = self.config.get("composer_datasets_post_path", "").strip()
+        if not base_url or not post_path:
+            return []
+
+        endpoint = f"{base_url}{post_path if post_path.startswith('/') else '/' + post_path}"
+        payload = {
+            "datasets": self._dataset_sources(),
+            "limit": int(self.config.get("measurements_limit", 500)),
+        }
+
+        response = await client.post(endpoint, headers=self._headers(), json=payload)
+        response.raise_for_status()
+
+        body = response.json()
+        dataset_items = self._extract_list(body, ["datasets", "items", "data"])
+        normalized_items: List[Dict[str, Any]] = []
+
+        for item in dataset_items:
+            if not isinstance(item, dict):
+                continue
+
+            source_id = item.get("source_id") or item.get("sensor_id") or item.get("id")
+            if not source_id:
+                continue
+
+            normalized: Dict[str, Any] = {
+                "name": item.get("name") or f"composer_{source_id}",
+                "source_id": str(source_id),
+                "metric_name": str(item.get("metric_name") or item.get("metric") or self.config.get("default_metric_name", "voltage")),
+                "temporal_mode": str(item.get("temporal_mode") or "hourly"),
+                "aggregation": str(item.get("aggregation") or "none"),
+                "timestamp_column": item.get("timestamp_column"),
+                "timestamp_format": item.get("timestamp_format"),
+                "date_column": item.get("date_column"),
+                "time_column": item.get("time_column"),
+                "value_column": item.get("value_column"),
+                "delimiter": item.get("delimiter"),
+                "max_rows": int(item.get("max_rows", 0) or 0),
+            }
+
+            if isinstance(item.get("points"), list):
+                normalized["points"] = item.get("points")
+            elif isinstance(item.get("csv_text"), str):
+                normalized["csv_text"] = item.get("csv_text")
+            elif item.get("source_url"):
+                normalized["url"] = str(item.get("source_url"))
+            else:
+                continue
+
+            normalized_items.append(normalized)
+
+        return normalized_items
 
     @staticmethod
     def _extract_list(payload: Any, keys: List[str]) -> List[Any]:
@@ -246,34 +307,68 @@ class PeriodicIngestionService:
         return 1
 
     async def _run_datasets_mode(self) -> Dict[str, Any]:
-        sources = self._dataset_sources()
+        fallback_sources = self._dataset_sources()
         processed_sensors = 0
         ingested = 0
+        source_origin = "fallback"
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=self._timeout()) as client:
+            sources: List[Dict[str, Any]] = []
+            try:
+                composer_sources = await self._fetch_datasets_from_composer(client)
+                if composer_sources:
+                    sources = composer_sources
+                    source_origin = "composer_post"
+                    logger.info("⏱️ Datasets recebidos do Composer via POST: %s", len(sources))
+            except Exception as composer_error:
+                logger.warning("⚠️ Falha ao obter datasets via Composer POST: %s", composer_error)
+
+            if not sources:
+                sources = fallback_sources
+
             for source in sources:
-                url = source.get("url", "")
-                if not url:
-                    continue
-
                 processed_sensors += 1
-                response = await client.get(url)
-                response.raise_for_status()
-                csv_text = self._read_dataset_text(url, response)
+                points: List[Dict[str, Any]] = []
                 max_rows = int(source.get("max_rows", 0) or 0)
-                if max_rows > 0:
-                    csv_text = self._apply_row_limit(csv_text, max_rows)
-                    logger.info("⏱️ Dataset %s limitado a %s linhas para ingestão", source.get("name"), max_rows)
 
-                points = _parse_csv_points(
-                    csv_text,
-                    delimiter=source.get("delimiter"),
-                    timestamp_column=source.get("timestamp_column"),
-                    value_column=source.get("value_column"),
-                    date_column=source.get("date_column"),
-                    time_column=source.get("time_column"),
-                    timestamp_format=source.get("timestamp_format"),
-                )
+                if isinstance(source.get("points"), list):
+                    points = self._extract_points({"items": source.get("points")})
+                elif isinstance(source.get("csv_text"), str):
+                    csv_text = source.get("csv_text")
+                    if max_rows > 0:
+                        csv_text = self._apply_row_limit(csv_text, max_rows)
+                        logger.info("⏱️ Dataset %s limitado a %s linhas para ingestão", source.get("name"), max_rows)
+
+                    points = _parse_csv_points(
+                        csv_text,
+                        delimiter=source.get("delimiter"),
+                        timestamp_column=source.get("timestamp_column"),
+                        value_column=source.get("value_column"),
+                        date_column=source.get("date_column"),
+                        time_column=source.get("time_column"),
+                        timestamp_format=source.get("timestamp_format"),
+                    )
+                else:
+                    url = source.get("url", "")
+                    if not url:
+                        continue
+
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    csv_text = self._read_dataset_text(url, response)
+                    if max_rows > 0:
+                        csv_text = self._apply_row_limit(csv_text, max_rows)
+                        logger.info("⏱️ Dataset %s limitado a %s linhas para ingestão", source.get("name"), max_rows)
+
+                    points = _parse_csv_points(
+                        csv_text,
+                        delimiter=source.get("delimiter"),
+                        timestamp_column=source.get("timestamp_column"),
+                        value_column=source.get("value_column"),
+                        date_column=source.get("date_column"),
+                        time_column=source.get("time_column"),
+                        timestamp_format=source.get("timestamp_format"),
+                    )
 
                 if len(points) < 6:
                     continue
@@ -292,8 +387,9 @@ class PeriodicIngestionService:
                     aggregation=source.get("aggregation", "mean"),
                     context={
                         "ingestion_mode": "periodic_datasets",
+                        "source_origin": source_origin,
                         "dataset_name": source.get("name"),
-                        "dataset_url": url,
+                        "dataset_url": source.get("url"),
                     },
                 )
                 self._last_sensor_timestamp[source_id] = last_ts
@@ -377,11 +473,21 @@ class PeriodicIngestionService:
             processed_sensors = 0
             ingested = 0
             try:
-                mode = self.config.get("ingestion_mode", "datasets")
-                if mode == "composer":
-                    result = await self._run_composer_mode()
+                mode = self.config.get("ingestion_mode", "composer_push")
+                if mode != "composer_push":
+                    result = {
+                        "ok": False,
+                        "message": "modo de ingestão ativo desativado; use composer_push",
+                        "processed_sensors": 0,
+                        "ingested": 0,
+                    }
                 else:
-                    result = await self._run_datasets_mode()
+                    result = {
+                        "ok": True,
+                        "message": "modo passivo ativo: aguardando POST /v1/measurements do Composer",
+                        "processed_sensors": 0,
+                        "ingested": 0,
+                    }
 
                 processed_sensors = int(result.get("processed_sensors", 0))
                 ingested = int(result.get("ingested", 0))
@@ -450,6 +556,8 @@ class PeriodicIngestionService:
             "sensors_path",
             "measurements_path_template",
             "composer_token",
+            "composer_datasets_post_path",
+            "composer_timeout_seconds",
             "measurements_limit",
             "default_metric_name",
         }
@@ -460,9 +568,12 @@ class PeriodicIngestionService:
 
         self.config["interval_seconds"] = max(30, int(self.config.get("interval_seconds", 300)))
         self.config["measurements_limit"] = max(10, int(self.config.get("measurements_limit", 500)))
-        self.config["ingestion_mode"] = str(self.config.get("ingestion_mode", "datasets")).lower()
-        if self.config["ingestion_mode"] not in ["datasets", "composer"]:
-            self.config["ingestion_mode"] = "datasets"
+        self.config["composer_timeout_seconds"] = max(5, int(self.config.get("composer_timeout_seconds", 20)))
+        self.config["ingestion_mode"] = str(self.config.get("ingestion_mode", "composer_push")).lower()
+        if self.config["ingestion_mode"] in ["datasets", "composer"]:
+            self.config["ingestion_mode"] = "composer_push"
+        if self.config["ingestion_mode"] != "composer_push":
+            self.config["ingestion_mode"] = "composer_push"
 
         return self.get_status()
 
