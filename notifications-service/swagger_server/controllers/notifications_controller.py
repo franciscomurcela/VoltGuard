@@ -1,8 +1,11 @@
 import logging
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from bson import ObjectId
 from bson.errors import InvalidId
+from pymongo.errors import DuplicateKeyError
 
 import connexion
 
@@ -10,6 +13,59 @@ from swagger_server.db import get_db
 from swagger_server import twilio_provider
 
 logger = logging.getLogger(__name__)
+
+STATUS_PENDING = 'PENDING'
+STATUS_DELIVERED = 'DELIVERED'
+STATUS_FAILED = 'FAILED'
+STATUS_ABORTED_BY_PREFERENCE = 'ABORTED_BY_PREFERENCE'
+STATUS_QUEUED_FOR_DIGEST = 'QUEUED_FOR_DIGEST'
+
+
+def _normalize_status(value: str) -> str:
+    normalized = (value or '').strip().upper()
+    known = {
+        STATUS_PENDING,
+        STATUS_DELIVERED,
+        STATUS_FAILED,
+        STATUS_ABORTED_BY_PREFERENCE,
+        STATUS_QUEUED_FOR_DIGEST,
+        'PROCESSING',
+        'SENT',
+    }
+    return normalized if normalized in known else normalized
+
+
+def _message_from_template(message_template: str, variables: dict) -> str:
+    return message_template.format(**variables) if variables else message_template
+
+
+def _payload_hash(payload: dict) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def _extract_idempotency_key() -> str:
+    headers = connexion.request.headers or {}
+    key = headers.get('Idempotency-Key') or headers.get('X-Idempotency-Key')
+    if not key:
+        return ''
+    return str(key).strip()
+
+
+def _audit_event(db, event_type: str, notification_id=None, status=None, details=None):
+    correlation_id = (connexion.request.headers or {}).get('X-Correlation-ID')
+    doc = {
+        'event_type': event_type,
+        'notification_id': str(notification_id) if notification_id else None,
+        'status': _normalize_status(status) if status else None,
+        'correlation_id': correlation_id,
+        'details': details or {},
+        'created_at': datetime.now(tz=timezone.utc),
+    }
+    try:
+        db.notification_audit.insert_one(doc)
+    except Exception as exc:
+        logger.warning('Failed to write notification audit event %s: %s', event_type, exc)
 
 
 def _normalize_alert_type(value: str) -> str:
@@ -46,8 +102,15 @@ def _doc_to_dict(doc: dict) -> dict:
     result = dict(doc)
     if '_id' in result:
         result['id'] = str(result.pop('_id'))
+    result.pop('payload_hash', None)
+    if isinstance(result.get('updated_at'), datetime):
+        result['updated_at'] = result['updated_at'].isoformat()
+    if isinstance(result.get('sent_at'), datetime):
+        result['sent_at'] = result['sent_at'].isoformat()
     if isinstance(result.get('created_at'), datetime):
         result['created_at'] = result['created_at'].isoformat()
+    if isinstance(result.get('status'), str):
+        result['status'] = _normalize_status(result['status'])
     return result
 
 
@@ -80,6 +143,10 @@ def v1_notifications_post(body):  # noqa: E501
     alert_type = _normalize_alert_type(data.get('alert_type'))
     message_template = data.get('message_template', '')
     variables = data.get('variables') or {}
+    idempotency_key = _extract_idempotency_key()
+
+    if idempotency_key and len(idempotency_key) > 128:
+        return {'error': {'message': 'Idempotency-Key must be <= 128 chars', 'type': 'validation_error', 'code': 400}}, 400
 
     if not all([client_id, target, channel, alert_type, message_template]):
         return {'error': {'message': 'client_id, target, channel, alert_type and message_template are required', 'type': 'validation_error', 'code': 400}}, 400
@@ -88,9 +155,35 @@ def v1_notifications_post(body):  # noqa: E501
 
     # Render the message
     try:
-        message = message_template.format(**variables) if variables else message_template
+        message = _message_from_template(message_template, variables)
     except KeyError as exc:
         return {'error': {'message': f'Missing template variable: {exc}', 'type': 'validation_error', 'code': 400}}, 400
+
+    payload_signature = {
+        'client_id': client_id,
+        'target': target,
+        'channel': channel,
+        'alert_type': alert_type,
+        'message_template': message_template,
+        'variables': variables,
+    }
+    payload_hash = _payload_hash(payload_signature)
+
+    if idempotency_key:
+        existing = db.notifications.find_one({'client_id': client_id, 'idempotency_key': idempotency_key})
+        if existing:
+            if existing.get('payload_hash') != payload_hash:
+                return {'error': {'message': 'Idempotency-Key was already used with a different payload', 'type': 'conflict_error', 'code': 409}}, 409
+            _audit_event(
+                db,
+                'IDEMPOTENCY_REPLAY',
+                notification_id=existing.get('_id'),
+                status=existing.get('status'),
+                details={'client_id': client_id, 'idempotency_key': idempotency_key},
+            )
+            existing_payload = _doc_to_dict(existing)
+            existing_payload['idempotent_replay'] = True
+            return existing_payload, 200
 
     now = datetime.now(tz=timezone.utc)
     doc = {
@@ -100,11 +193,34 @@ def v1_notifications_post(body):  # noqa: E501
         'alert_type': alert_type,
         'message_template': message_template,
         'variables': variables,
-        'status': 'PENDING',
+        'status': STATUS_PENDING,
+        'payload_hash': payload_hash,
         'created_at': now,
     }
-    result = db.notifications.insert_one(doc)
+    if idempotency_key:
+        doc['idempotency_key'] = idempotency_key
+
+    try:
+        result = db.notifications.insert_one(doc)
+    except DuplicateKeyError:
+        existing = db.notifications.find_one({'client_id': client_id, 'idempotency_key': idempotency_key})
+        if existing:
+            if existing.get('payload_hash') != payload_hash:
+                return {'error': {'message': 'Idempotency-Key was already used with a different payload', 'type': 'conflict_error', 'code': 409}}, 409
+            existing_payload = _doc_to_dict(existing)
+            existing_payload['idempotent_replay'] = True
+            return existing_payload, 200
+        return {'error': {'message': 'Could not persist notification', 'type': 'storage_error', 'code': 500}}, 500
+
     notification_id = str(result.inserted_id)
+
+    _audit_event(
+        db,
+        'CREATED',
+        notification_id=result.inserted_id,
+        status=STATUS_PENDING,
+        details={'client_id': client_id, 'target': target, 'channel': channel, 'alert_type': alert_type},
+    )
 
     preference = _find_user_preference(db, target)
     channel_type = _channel_kind(channel)
@@ -118,12 +234,19 @@ def v1_notifications_post(body):  # noqa: E501
     if not channel_enabled:
         db.notifications.update_one(
             {'_id': result.inserted_id},
-            {'$set': {'status': 'ABORTED_BY_PREFERENCE', 'updated_at': datetime.now(tz=timezone.utc)}}
+            {'$set': {'status': STATUS_ABORTED_BY_PREFERENCE, 'updated_at': datetime.now(tz=timezone.utc)}}
+        )
+        _audit_event(
+            db,
+            'ABORTED_BY_PREFERENCE',
+            notification_id=result.inserted_id,
+            status=STATUS_ABORTED_BY_PREFERENCE,
+            details={'channel_type': channel_type},
         )
         return {
             'id': notification_id,
             'client_id': client_id,
-            'status': 'ABORTED_BY_PREFERENCE',
+            'status': STATUS_ABORTED_BY_PREFERENCE,
             'created_at': now.isoformat(),
         }, 201
 
@@ -136,39 +259,60 @@ def v1_notifications_post(body):  # noqa: E501
                 'channel': channel,
                 'alert_type': alert_type,
                 'message': message,
-                'status': 'QUEUED_FOR_DIGEST',
+                'status': STATUS_QUEUED_FOR_DIGEST,
                 'queued_at': datetime.now(tz=timezone.utc),
             }
         )
         db.notifications.update_one(
             {'_id': result.inserted_id},
-            {'$set': {'status': 'QUEUED_FOR_DIGEST', 'updated_at': datetime.now(tz=timezone.utc)}}
+            {'$set': {'status': STATUS_QUEUED_FOR_DIGEST, 'updated_at': datetime.now(tz=timezone.utc)}}
+        )
+        _audit_event(
+            db,
+            'ENQUEUED_FOR_DIGEST',
+            notification_id=result.inserted_id,
+            status=STATUS_QUEUED_FOR_DIGEST,
+            details={'delivery_mode': 'digest'},
         )
         return {
             'id': notification_id,
             'client_id': client_id,
-            'status': 'QUEUED_FOR_DIGEST',
+            'status': STATUS_QUEUED_FOR_DIGEST,
             'created_at': now.isoformat(),
         }, 201
 
     # Attempt delivery
     try:
         delivery = twilio_provider.send_notification(target, message, channel, db)
-        status = 'DELIVERED' if delivery.get('success') else 'FAILED'
+        status = STATUS_DELIVERED if delivery.get('success') else STATUS_FAILED
         update_data = {'status': status, 'sent_at': datetime.now(tz=timezone.utc)}
         if delivery.get('message_sid'):
             update_data['message_sid'] = delivery['message_sid']
+        _audit_event(
+            db,
+            'DELIVERY_ATTEMPT',
+            notification_id=result.inserted_id,
+            status=status,
+            details={'provider_success': bool(delivery.get('success'))},
+        )
     except Exception as exc:
         logger.error("Delivery failed for notification %s: %s", notification_id, exc)
-        status = 'FAILED'
-        update_data = {'status': 'FAILED', 'error': str(exc)}
+        status = STATUS_FAILED
+        update_data = {'status': STATUS_FAILED, 'error': str(exc), 'updated_at': datetime.now(tz=timezone.utc)}
+        _audit_event(
+            db,
+            'DELIVERY_ATTEMPT',
+            notification_id=result.inserted_id,
+            status=STATUS_FAILED,
+            details={'provider_success': False, 'error': str(exc)},
+        )
 
     db.notifications.update_one({'_id': result.inserted_id}, {'$set': update_data})
 
     response = {
         'id': notification_id,
         'client_id': client_id,
-        'status': status,
+        'status': _normalize_status(status),
         'created_at': now.isoformat(),
     }
     return response, 201
@@ -272,7 +416,7 @@ def v1_digest_process_post(body=None):  # noqa: E501
             db.digest_queue.update_one({'_id': queue_id}, {'$set': queue_update})
 
             notification_update = {
-                'status': 'DELIVERED',
+                'status': STATUS_DELIVERED,
                 'sent_at': sent_at,
                 'updated_at': sent_at,
             }
@@ -281,18 +425,32 @@ def v1_digest_process_post(body=None):  # noqa: E501
 
             if notification_id:
                 db.notifications.update_one({'_id': notification_id}, {'$set': notification_update})
+                _audit_event(
+                    db,
+                    'DIGEST_DELIVERED',
+                    notification_id=notification_id,
+                    status=STATUS_DELIVERED,
+                    details={'queue_id': str(queue_id)},
+                )
 
             sent_count += 1
         except Exception as exc:
             failed_at = datetime.now(tz=timezone.utc)
             db.digest_queue.update_one(
                 {'_id': queue_id},
-                {'$set': {'status': 'FAILED', 'error': str(exc), 'updated_at': failed_at}},
+                {'$set': {'status': STATUS_FAILED, 'error': str(exc), 'updated_at': failed_at}},
             )
             if notification_id:
                 db.notifications.update_one(
                     {'_id': notification_id},
-                    {'$set': {'status': 'FAILED', 'error': str(exc), 'updated_at': failed_at}},
+                    {'$set': {'status': STATUS_FAILED, 'error': str(exc), 'updated_at': failed_at}},
+                )
+                _audit_event(
+                    db,
+                    'DIGEST_FAILED',
+                    notification_id=notification_id,
+                    status=STATUS_FAILED,
+                    details={'queue_id': str(queue_id), 'error': str(exc)},
                 )
             failed_count += 1
 

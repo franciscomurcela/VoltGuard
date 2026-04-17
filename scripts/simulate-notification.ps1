@@ -1,6 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$UserId,
+  [string]$UserId = "op_joao_silva",
 
   [string]$ApiBaseUrl = "http://localhost:8080",
   [string]$SourceId = "sensor_teste_01",
@@ -14,6 +13,11 @@ param(
 )
 
 $uri = "$ApiBaseUrl/api/anomalies/simulate-notification"
+
+if ($UserId -match '^\d+$') {
+  Write-Warning "UserId '$UserId' parece inválido para este ambiente. Exemplos válidos: op_joao_silva, op_maria_costa"
+}
+
 $payload = @{
   user_id = $UserId
   source_id = $SourceId
@@ -30,4 +34,46 @@ if ($MessageTemplate -and $MessageTemplate.Trim().Length -gt 0) {
 $body = $payload | ConvertTo-Json -Depth 5
 
 Write-Host "POST $uri" -ForegroundColor Cyan
-Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body $body
+try {
+  Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body $body
+} catch {
+  $resp = $_.Exception.Response
+  $statusCode = $null
+  $statusDesc = $null
+  $detail = $null
+
+  if ($resp) {
+    try { $statusCode = [int]$resp.StatusCode } catch {}
+    try { $statusDesc = $resp.StatusDescription } catch {}
+
+    # 1) Preferir mensagem já processada pelo PowerShell (quando disponível)
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+      $detail = $_.ErrorDetails.Message
+    }
+
+    # 2) Fallback: ler stream bruto do body
+    if (-not $detail) {
+      try {
+        $stream = $resp.GetResponseStream()
+        if ($stream) {
+          $reader = New-Object System.IO.StreamReader($stream)
+          $raw = $reader.ReadToEnd()
+          if ($raw -and $raw.Trim().Length -gt 0) {
+            $detail = $raw
+          }
+        }
+      } catch {}
+    }
+  }
+
+  if (-not $detail -or $detail.Trim().Length -eq 0) {
+    $detail = $_.Exception.Message
+  }
+
+  $meta = @()
+  if ($statusCode) { $meta += "HTTP $statusCode" }
+  if ($statusDesc) { $meta += $statusDesc }
+  $metaText = if ($meta.Count -gt 0) { " ($($meta -join ' - '))" } else { "" }
+
+  Write-Error "Request falhou$metaText. Detalhe: $detail"
+}

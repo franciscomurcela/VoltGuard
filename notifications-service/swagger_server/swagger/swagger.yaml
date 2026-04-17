@@ -16,6 +16,14 @@ paths:
         - Gestão de Notificações
       operationId: v1_notifications_post
       x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Chave de idempotencia para evitar criacao duplicada em retries.
+          schema:
+            type: string
+            maxLength: 128
       requestBody:
         required: true
         content:
@@ -29,6 +37,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationResponse'
+        '200':
+          description: OK - Replay idempotente (pedido ja processado anteriormente).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '409':
+          description: CONFLICT - Idempotency-Key reutilizada com payload diferente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '400':
           description: BAD REQUEST - Falha na validação dos dados de entrada.
           content:

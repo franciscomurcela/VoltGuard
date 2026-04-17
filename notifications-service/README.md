@@ -32,6 +32,7 @@ A API de Notificações do VoltGuard funciona como gateway multicanal para envio
 - notifications: histórico, payload e estado de entrega.
 - user_preferences: targets, canais ativos e política de alert_type.
 - digest_queue: notificações com envio diferido.
+- notification_audit: trilho de auditoria estruturado por evento de ciclo de vida.
 - channels: configuração dinâmica opcional por canal.
 
 ### Dados iniciais
@@ -42,6 +43,11 @@ O serviço suporta seed de user_preferences para ambientes de desenvolvimento/te
 ### Segurança
 - Segurança global por auth_token na query string.
 - Endpoints públicos de preferências sem auth_token global (security: []).
+
+### Idempotência no envio
+- `POST /v1/notifications` aceita header `Idempotency-Key` (ou `X-Idempotency-Key`).
+- Se a mesma chave for reenviada com o mesmo payload, devolve resposta idempotente (sem duplicar notificação).
+- Se a mesma chave for reenviada com payload diferente, devolve `409 conflict`.
 
 ### Endpoints principais
 - POST /v1/notifications
@@ -61,10 +67,22 @@ O serviço suporta seed de user_preferences para ambientes de desenvolvimento/te
 - message_template
 
 ## Estados de processamento
+- PENDING: notificação criada e ainda não entregue.
 - DELIVERED: entrega concluída com sucesso.
 - FAILED: falha no provider.
 - ABORTED_BY_PREFERENCE: canal desativado para o utilizador.
 - QUEUED_FOR_DIGEST: entrega adiada para processamento de digest.
+
+Nota: o contrato normaliza estados em uppercase para consistência entre backend/frontend.
+
+## Auditoria estruturada
+Cada notificação gera eventos na coleção `notification_audit`, incluindo:
+- CREATED
+- IDEMPOTENCY_REPLAY
+- ENQUEUED_FOR_DIGEST
+- DELIVERY_ATTEMPT
+- DIGEST_DELIVERED
+- DIGEST_FAILED
 
 ## Configuração e segredos
 
@@ -132,6 +150,16 @@ curl -s -X POST "http://localhost:8083/v1/notifications?auth_token=your_secure_a
   -d '{"client_id":"energy_composer","target":"franciscomurcela0@gmail.com","channel":"email","alert_type":"critical","message_template":"Teste API Notifications"}'
 ```
 
+### 4.1) Envio idempotente (sem duplicação em retry)
+```bash
+curl -s -X POST "http://localhost:8083/v1/notifications?auth_token=your_secure_auth_token" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: notif-2026-04-15-001" \
+  -d '{"client_id":"energy_composer","target":"franciscomurcela0@gmail.com","channel":"email","alert_type":"critical","message_template":"Teste idempotente"}'
+```
+
+Repetir o mesmo pedido com a mesma chave e mesmo payload devolve replay idempotente (sem criar novo registo).
+
 ### 5) Simulação manual com comando HTTP
 PowerShell:
 ```powershell
@@ -154,6 +182,10 @@ PowerShell (Windows):
 ```powershell
 .\scripts\simulate-notification.ps1 -UserId op_joao_silva
 ```
+
+Utilizadores seeded válidos para testes rápidos:
+- `op_joao_silva`
+- `op_maria_costa`
 
 PowerShell com parâmetros opcionais:
 ```powershell
@@ -230,6 +262,9 @@ DRY_RUN=false BATCH_SIZE=100 AUTH_TOKEN=your_secure_auth_token bash ./scripts/pr
 ### 400 validation_error
 - Confirmar presença dos campos obrigatórios.
 - Confirmar valores válidos para alert_type.
+
+### 409 conflict
+- Confirmar se o `Idempotency-Key` foi reutilizado com payload diferente.
 
 ### ABORTED_BY_PREFERENCE
 - Verificar se o canal está ativo nas preferências do utilizador.
