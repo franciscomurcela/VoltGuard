@@ -26,6 +26,7 @@ import firmwareRoutes from './routes/firmwares.js'
 import preferencesRoutes from './routes/preferences.js'
 import measurementRoutes from './routes/measurements.js'
 import webhookRoutes from './routes/webhooks.js'
+import dashboardRoutes from './routes/dashboard.js'
 import { registerAnomalyWebhook } from './services/webhookRegistration.js'
 import { processDigest } from './services/notificationProxy.js'
 
@@ -102,6 +103,7 @@ app.use('/api/districts', districtRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/anomalies', anomalyRoutes)
 app.use('/api/measurements', measurementRoutes)
+app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/firmwares', firmwareRoutes)
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────

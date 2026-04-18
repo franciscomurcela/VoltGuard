@@ -64,7 +64,7 @@ services:
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
       ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
       COMPOSER_BASE_URL: ${COMPOSER_BASE_URL:-http://compositor-backend:8080}
-      ANOMALY_NOTIFY_USER_IDS: ${ANOMALY_NOTIFY_USER_IDS:-}
+      ANOMALY_NOTIFY_USER_IDS: ${ANOMALY_NOTIFY_USER_IDS:-op_joao_silva,op_maria_costa}
       DIGEST_INTERVAL_MS: ${DIGEST_INTERVAL_MS:-3600000}
     ports:
       - "8080:8080"

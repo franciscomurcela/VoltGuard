@@ -246,7 +246,15 @@ class Simulator:
             base_url=args.notification_url,
             timeout=10.0,
         )
+        self.oam_client = httpx.AsyncClient(
+            base_url=args.oam_url,
+            timeout=10.0,
+        )
         self.console = Console() if HAS_RICH else None
+
+        # Buffer: {sensor_id: {metric_name: [{timestamp, value}]}}
+        # Accumulates points until MIN_DATASET_POINTS is reached before submitting
+        self._buffer: dict = {}
 
         # Stats
         self.total_readings = 0
@@ -266,13 +274,35 @@ class Simulator:
             clean = re.sub(r'\[/?[^\]]+\]', '', msg)
             print(f"{ts} {clean}")
 
-    async def send_measurements(self, batch: list) -> Optional[str]:
+    MIN_DATASET_POINTS = 8  # anomaly service requires ≥6; use 8 for a clean train/forecast split
+
+    def _buffer_point(self, source_id: str, metric_name: str, timestamp: str, value: float):
+        self._buffer.setdefault(source_id, {}).setdefault(metric_name, []).append(
+            {"timestamp": timestamp, "value": value}
+        )
+
+    async def _flush_ready(self) -> list:
+        """Submit all sensor/metric series that have reached MIN_DATASET_POINTS. Returns measurement IDs."""
+        ids = []
+        for source_id, metrics in list(self._buffer.items()):
+            for metric_name, points in list(metrics.items()):
+                if len(points) < self.MIN_DATASET_POINTS:
+                    continue
+                mid = await self._submit_dataset(source_id, metric_name, points)
+                if mid:
+                    ids.append(mid)
+                # Reset buffer for this series after submission
+                self._buffer[source_id][metric_name] = []
+        return ids
+
+    async def _submit_dataset(self, source_id: str, metric_name: str, points: list) -> Optional[str]:
         try:
-            response = await self.anomaly_client.post("/v1/measurements", json={"data": batch})
+            payload = {"source_id": source_id, "metric_name": metric_name, "dataset": points}
+            response = await self.anomaly_client.post("/v1/measurements", json=payload)
             if response.status_code == 202:
                 return response.json().get("measurement_id")
             else:
-                self.log(f"[red]✗ Anomaly API returned {response.status_code}[/red]")
+                self.log(f"[red]✗ Anomaly API {response.status_code}: {response.text[:120]}[/red]")
                 self.total_errors += 1
                 return None
         except Exception as e:
@@ -330,45 +360,55 @@ class Simulator:
         except Exception as e:
             self.log(f"[yellow]⚠ Notification error: {e}[/yellow]")
 
+    async def send_keepalive(self, sensor: Sensor):
+        try:
+            response = await self.oam_client.post(f"/sensors/{sensor.sensor_id}/keepalive")
+            if response.status_code not in (200, 204):
+                self.log(f"[yellow]⚠ Keepalive OAM {sensor.sensor_id[:8]}...: {response.status_code}[/yellow]")
+        except Exception as e:
+            self.log(f"[yellow]⚠ Keepalive error {sensor.sensor_id[:8]}...: {e}[/yellow]")
+
     async def run_cycle(self, cycle: int):
         batch = []
         anomalous_sensors = []
 
+        keepalive_tasks = []
+        measurement_tasks = []
         for sensor in self.sensors:
             inject = random.random() < self.args.anomaly_chance
             reading, pattern = sensor.generate_reading(inject_anomaly=inject)
-            batch.append(reading)
             self.total_readings += 1
 
             if inject:
                 self.total_anomalies_injected += 1
                 anomalous_sensors.append((sensor, pattern))
 
-        # Send in chunks
-        measurement_ids = []
-        for i in range(0, len(batch), self.args.batch_size):
-            chunk = batch[i:i + self.args.batch_size]
-            mid = await self.send_measurements(chunk)
-            if mid:
-                measurement_ids.append(mid)
+            keepalive_tasks.append(self.send_keepalive(sensor))
+
+            # Buffer one point per metric
+            ts = reading["timestamp"]
+            for metric_name, value in reading["metrics"].items():
+                self._buffer_point(sensor.sensor_id, metric_name, ts, value)
+
+        # Send keepalives concurrently
+        await asyncio.gather(*keepalive_tasks, return_exceptions=True)
+
+        # Flush series that have accumulated enough points
+        measurement_ids = await self._flush_ready()
 
         anomaly_count = len(anomalous_sensors)
         districts_hit = set(s.district for s, _ in anomalous_sensors)
         district_str = f" in {', '.join(districts_hit)}" if districts_hit else ""
 
         color = "red" if anomaly_count else "dim"
+        buffered = sum(len(pts) for metrics in self._buffer.values() for pts in metrics.values())
         self.log(
             f"[green]▶ Cycle {cycle}[/green] | "
-            f"{len(batch)} readings · {len(measurement_ids)} batches | "
+            f"{len(self.sensors)} sensors · {len(measurement_ids)} datasets submitted · {buffered} pts buffered | "
             f"[{color}]{anomaly_count} anomalies{district_str}[/{color}]"
         )
 
-        # Poll results
-        for mid in measurement_ids:
-            result = await self.check_measurement_status(mid)
-            if result and result.get("anomalies_detected"):
-                self.total_anomalies_detected += 1
-                self.log(f"[red]🔴 Anomaly confirmed[/red] → {mid}")
+        # (no polling needed — anomaly service responds inline)
 
         # Notifications
         if anomalous_sensors and self.args.notify:
@@ -423,6 +463,7 @@ class Simulator:
     async def run(self):
         self.log(f"[bold green]🚀 VoltGuard Sensor Simulator[/bold green]")
         self.log(
+            f"   OAM:           {self.args.oam_url}\n"
             f"   Anomaly:       {self.args.anomaly_url}\n"
             f"   Notification:  {self.args.notification_url}\n"
             f"   Sensors: {len(self.sensors)} | "
@@ -446,6 +487,7 @@ class Simulator:
             self.print_stats()
             await self.anomaly_client.aclose()
             await self.notification_client.aclose()
+            await self.oam_client.aclose()
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────

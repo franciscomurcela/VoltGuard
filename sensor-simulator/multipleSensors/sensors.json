@@ -1,11 +1,150 @@
 {
+  "_generated_at": "2026-04-15T09:31:19.437055+00:00",
+  "_source": "http://localhost:8084",
+  "_total": 14,
   "sensors": [
     {
-      "id": "fcb0b81a-11d8-4c34-937b-34cfd7fdc052",
-      "name": "Sensore Cacém",
+      "id": "22b6366f-33f0-4a4d-b364-99198ed57075",
+      "name": "sensor-test-02",
       "district": "Lisboa",
-      "metrics": ["voltage", "current", "power_factor"]
+      "metrics": [
+        "power_factor",
+        "frequency",
+        "power_draw"
+      ]
+    },
+    {
+      "id": "7adcde58-b612-47e3-ba06-a8be2500e160",
+      "name": "sensor-test-01",
+      "district": "Porto",
+      "metrics": [
+        "power_factor",
+        "frequency",
+        "temperature"
+      ]
+    },
+    {
+      "id": "49a53d71-bc26-44a8-abb3-1d496a435855",
+      "name": "Sensor Guarda-01",
+      "district": "Guarda",
+      "metrics": [
+        "current",
+        "power_factor",
+        "voltage"
+      ]
+    },
+    {
+      "id": "0321c51d-7278-43fb-af70-8a0323cede62",
+      "name": "Sensor Beja-01",
+      "district": "Beja",
+      "metrics": [
+        "power_draw",
+        "power_factor",
+        "temperature",
+        "current"
+      ]
+    },
+    {
+      "id": "fa62729f-cf5b-4576-9465-6c3472b9a33d",
+      "name": "Sensor Evora-01",
+      "district": "Évora",
+      "metrics": [
+        "frequency",
+        "voltage"
+      ]
+    },
+    {
+      "id": "c5462132-ddb2-451c-ad3e-13c17af310ac",
+      "name": "Sensor Viseu-01",
+      "district": "Viseu",
+      "metrics": [
+        "current",
+        "frequency",
+        "temperature"
+      ]
+    },
+    {
+      "id": "6e6c86c2-cd00-4482-9ed3-79d4d4eff5d1",
+      "name": "Sensor Leiria-01",
+      "district": "Leiria",
+      "metrics": [
+        "power_factor",
+        "current",
+        "temperature"
+      ]
+    },
+    {
+      "id": "2bdeaec6-6c64-49e2-8516-7db4eebdc7c6",
+      "name": "Sensor Setubal-01",
+      "district": "Setúbal",
+      "metrics": [
+        "power_draw",
+        "temperature",
+        "power_factor",
+        "voltage"
+      ]
+    },
+    {
+      "id": "2d39e74f-2920-4908-ad84-8394337288a5",
+      "name": "Sensor Faro-01",
+      "district": "Faro",
+      "metrics": [
+        "voltage",
+        "power_draw",
+        "temperature"
+      ]
+    },
+    {
+      "id": "1d6e482d-45f9-48da-88d6-113e08e5d8b4",
+      "name": "Sensor Coimbra-01",
+      "district": "Coimbra",
+      "metrics": [
+        "power_draw",
+        "power_factor",
+        "current"
+      ]
+    },
+    {
+      "id": "9653edd5-4428-4fb4-9911-4b62277ac53a",
+      "name": "Sensor Lisboa-01",
+      "district": "Lisboa",
+      "metrics": [
+        "power_draw",
+        "voltage",
+        "temperature"
+      ]
+    },
+    {
+      "id": "c3224c63-7c2a-4b83-8986-62b32dcc7c96",
+      "name": "Sensor Porto-01",
+      "district": "Porto",
+      "metrics": [
+        "power_factor",
+        "frequency",
+        "temperature"
+      ]
+    },
+    {
+      "id": "193f60f0-ddbc-4e56-a7ef-84213be6cab7",
+      "name": "Sensor Braga-01",
+      "district": "Braga",
+      "metrics": [
+        "current",
+        "frequency",
+        "power_factor",
+        "temperature"
+      ]
+    },
+    {
+      "id": "3df93789-9bda-4676-afd6-9f1af3d9ab86",
+      "name": "Sensor Aveiro-01",
+      "district": "Aveiro",
+      "metrics": [
+        "current",
+        "frequency",
+        "temperature",
+        "voltage"
+      ]
     }
-  ],
-  "_comment": "Run 'python simulator.py --generate-config' to auto-populate from OAM"
+  ]
 }
