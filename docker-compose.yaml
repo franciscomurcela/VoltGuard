@@ -58,7 +58,7 @@ services:
       RATE_LIMIT_WINDOW_MS: 60000
       RATE_LIMIT_MAX_REQUESTS: 200
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: http://composer.voltguard.pt
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
@@ -206,7 +206,7 @@ services:
       DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
       SERVER_ADDR: 0.0.0.0:8080
       FIRMWARE_STORAGE_PATH: /app/firmware_storage
-      BASE_URL: ${OAM_BASE_URL:-http://localhost:8084}
+      BASE_URL: ${OAM_BASE_URL:-http://oam.voltguard.pt}
       RUST_LOG: ${LOG_LEVEL:-info}
     volumes:
       - oam-firmware-storage:/app/firmware_storage
@@ -249,6 +249,40 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # KONG — API Gateway
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  kong:
+    image: kong:3.7
+    container_name: voltguard-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "80:8000"    # public gateway — all subdomain traffic enters here
+      - "8001:8001"  # Kong admin API (debug only — remove in production)
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      - compositor-frontend
+      - compositor-backend
+      - oam-service
+      - notifications-service
+      - anomaly-api
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/status"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     restart: unless-stopped
 
 # ═══════════════════════════════════════════════════════════════════════════

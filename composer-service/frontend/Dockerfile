@@ -13,15 +13,6 @@ RUN echo 'server { \
     listen 80; \
     root /usr/share/nginx/html; \
     index index.html; \
-    resolver 127.0.0.11 valid=10s ipv6=off; \
-    location /api/ { \
-        set $backend http://compositor-backend:8080; \
-        proxy_pass $backend; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
-    } \
     location / { \
         try_files $uri $uri/ /index.html; \
     } \
