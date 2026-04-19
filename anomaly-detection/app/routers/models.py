@@ -1,12 +1,13 @@
 from datetime import datetime
 import importlib
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.deps import verify_token
 from app.schemas import AIModelInfo, ModelConfig, ForecastResponse, ForecastPoint
-from app.state import db_ai_models, db_model_config, db_trained_models, save_model_config
+from app.state import db_ai_models, db_model_config, db_datasets, db_trained_models, save_forecast, save_model_config
 
 logger = logging.getLogger("voltguard-api")
 router = APIRouter(tags=["3. Model Management"])
@@ -85,6 +86,13 @@ async def get_forecast(
 
         forecast = model.predict(future_df)
 
+        related_datasets = [
+            item for item in db_datasets.values()
+            if item.get("source_id") == sensor_id and item.get("metric_name") == metric_name
+        ]
+        related_datasets.sort(key=lambda item: item.get("uploaded_at") or "", reverse=True)
+        client_id = related_datasets[0].get("client_id") if related_datasets else sensor_id
+
         forecast_points = []
         for _, row in forecast.iterrows():
             point = ForecastPoint(
@@ -95,10 +103,27 @@ async def get_forecast(
             )
             forecast_points.append(point)
 
+        forecast_id = f"fcst_{uuid.uuid4().hex[:12]}"
+        save_forecast(
+            forecast_id,
+            {
+                "forecast_id": forecast_id,
+                "sensor_id": sensor_id,
+                "client_id": client_id,
+                "metric_name": metric_name,
+                "model_id": model_id,
+                "periods": periods,
+                "last_training": datetime.utcnow().isoformat(),
+                "requested_at": datetime.utcnow().isoformat(),
+                "forecasts": [point.model_dump() for point in forecast_points],
+            },
+        )
+
         logger.info(f"🔮 Forecast gerado: sensor={sensor_id}, periods={periods}, model={model_id}")
 
         return ForecastResponse(
             sensor_id=sensor_id,
+            client_id=client_id,
             metric_name=metric_name,
             model_id=model_id,
             forecasts=forecast_points,

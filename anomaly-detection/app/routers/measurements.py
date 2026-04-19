@@ -34,6 +34,8 @@ async def upload_dataset_json(request: DatasetUploadRequest, token: str = Depend
     sorted_points = sorted(request.dataset, key=lambda p: p.timestamp)
     total = len(sorted_points)
     normalized_config = _normalize_dataset_config(request.config)
+    context_client_id = (normalized_config.context or {}).get("client_id") if normalized_config else None
+    client_id = request.client_id or context_client_id or request.source_id
     split_idx = int(total * normalized_config.train_ratio)
 
     input_points = [p.dict() for p in sorted_points]
@@ -41,6 +43,7 @@ async def upload_dataset_json(request: DatasetUploadRequest, token: str = Depend
     meta = {
         "measurement_id": measurement_id,
         "source_id": request.source_id,
+        "client_id": client_id,
         "metric_name": request.metric_name,
         "rows": total,
         "rows_training": split_idx,
@@ -57,6 +60,7 @@ async def upload_dataset_json(request: DatasetUploadRequest, token: str = Depend
     anomalies_detected = await _analyze_measurement_with_prophet(
         measurement_id=measurement_id,
         source_id=request.source_id,
+        client_id=client_id,
         metric_name=request.metric_name,
         points=input_points,
         config=normalized_config,
@@ -85,6 +89,7 @@ async def upload_dataset_json(request: DatasetUploadRequest, token: str = Depend
 async def upload_dataset_csv(
     file: UploadFile = File(..., description="Ficheiro CSV com colunas: timestamp,value"),
     source_id: str = Form(..., description="ID do sensor"),
+    client_id: Optional[str] = Form(None, description="ID lógico do cliente"),
     metric_name: str = Form(..., description="Nome da métrica (ex: voltage)"),
     train_ratio: float = Form(0.8, description="Percentagem de treino (0.5-0.95)"),
     temporal_mode: str = Form("daily", description="Granularidade temporal: hourly|daily|weekly|monthly"),
@@ -125,9 +130,11 @@ async def upload_dataset_csv(
         raise HTTPException(status_code=400, detail=f"Configuração inválida: {config_error}")
 
     split_idx = int(total * train_ratio)
+    resolved_client_id = client_id or source_id
     meta = {
         "measurement_id": measurement_id,
         "source_id": source_id,
+        "client_id": resolved_client_id,
         "metric_name": metric_name,
         "rows": total,
         "rows_training": split_idx,
@@ -144,6 +151,7 @@ async def upload_dataset_csv(
     anomalies_detected = await _analyze_measurement_with_prophet(
         measurement_id=measurement_id,
         source_id=source_id,
+        client_id=resolved_client_id,
         metric_name=metric_name,
         points=sorted_points,
         config=normalized_config,
@@ -195,11 +203,14 @@ async def import_measurements_from_url(request: DatasetImportRequest, token: str
     total = len(sorted_points)
 
     normalized_config = _normalize_dataset_config(request.config)
+    context_client_id = (normalized_config.context or {}).get("client_id") if normalized_config else None
+    client_id = request.client_id or context_client_id or request.source_id
     split_idx = int(total * normalized_config.train_ratio)
 
     meta = {
         "measurement_id": measurement_id,
         "source_id": request.source_id,
+        "client_id": client_id,
         "metric_name": request.metric_name,
         "rows": total,
         "rows_training": split_idx,
@@ -217,6 +228,7 @@ async def import_measurements_from_url(request: DatasetImportRequest, token: str
     anomalies_detected = await _analyze_measurement_with_prophet(
         measurement_id=measurement_id,
         source_id=request.source_id,
+        client_id=client_id,
         metric_name=request.metric_name,
         points=sorted_points,
         config=normalized_config,
