@@ -226,6 +226,27 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — Database (MongoDB)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-db:
+    image: mongo:7.0
+    container_name: voltguard-anomaly-db
+    ports:
+      - "27018:27017"
+    volumes:
+      - anomaly-db-data:/data/db
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand({ping:1})' --quiet"]
+      interval: 10s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # ANOMALY — FastAPI (API)
   # ═══════════════════════════════════════════════════════════════════════════
 
@@ -238,9 +259,13 @@ services:
     env_file:
       - ./anomaly-detection/.env
     environment:
-      VG_MONGO_URI: ""
+      VG_MONGO_URI: mongodb://anomaly-db:27017/
+      VG_MONGO_DB: voltguard
     ports:
       - "8085:8085"
+    depends_on:
+      anomaly-db:
+        condition: service_healthy
     networks:
       - voltguard-network
     healthcheck:
@@ -258,6 +283,7 @@ services:
 volumes:
   keycloak-data:
   notifications-db-data:
+  anomaly-db-data:
   compositor-data:
   oam-postgres-data:
   oam-firmware-storage:

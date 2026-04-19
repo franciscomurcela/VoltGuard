@@ -56,3 +56,8 @@ Thumbs.db
 
 
 /.claude
+
+# Local test CSVs
+composer-service/sensors_import_clean.csv
+
+ANOMALY_COMPOSER_IMPLEMENTATION_PLAN.txt

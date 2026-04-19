@@ -265,6 +265,7 @@ async def _dispatch_webhook_event(event_type: str, payload: Dict[str, Any]) -> N
 async def _analyze_measurement_with_prophet(
     measurement_id: str,
     source_id: str,
+    client_id: str,
     metric_name: str,
     points: List[Dict[str, Any]],
     config: DatasetAnalysisConfig,
@@ -309,6 +310,7 @@ async def _analyze_measurement_with_prophet(
                 "anomaly_id": anomaly_id,
                 "measurement_id": measurement_id,
                 "source_id": source_id,
+                "client_id": client_id,
                 "timestamp": row["ds"].isoformat(),
                 "trigger_metrics": {
                     metric_name: actual_value,
@@ -332,6 +334,7 @@ async def _analyze_measurement_with_prophet(
                     "anomaly_id": anomaly_id,
                     "measurement_id": measurement_id,
                     "source_id": source_id,
+                    "client_id": client_id,
                     "metric_name": metric_name,
                     "timestamp": anomaly["timestamp"],
                     "severity": anomaly["severity"],
@@ -353,6 +356,7 @@ async def _analyze_measurement_with_prophet(
             {
                 "measurement_id": measurement_id,
                 "source_id": source_id,
+                "client_id": client_id,
                 "metric_name": metric_name,
                 "status": dataset_meta["training_status"],
                 "anomalies_detected": anomalies_detected,

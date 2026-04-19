@@ -5,6 +5,7 @@ import logging
 
 # In-memory store for anomalies
 _db_anomalies: Dict[str, Dict[str, Any]] = {}
+_db_forecasts: Dict[str, Dict[str, Any]] = {}
 
 logger = logging.getLogger("voltguard-api")
 
@@ -40,8 +41,31 @@ def init_persistence() -> None:
 
         datasets_col = _get_collection("datasets")
         anomalies_col = _get_collection("anomalies")
+        forecasts_col = _get_collection("forecasts")
         webhooks_col = _get_collection("webhooks")
         model_col = _get_collection("model_config")
+
+        if datasets_col is not None:
+            datasets_col.create_index("measurement_id", unique=True)
+            datasets_col.create_index("source_id")
+            datasets_col.create_index("client_id")
+            datasets_col.create_index("uploaded_at")
+
+        if anomalies_col is not None:
+            anomalies_col.create_index("anomaly_id", unique=True)
+            anomalies_col.create_index("measurement_id")
+            anomalies_col.create_index("source_id")
+            anomalies_col.create_index("client_id")
+            anomalies_col.create_index("timestamp")
+
+        if forecasts_col is not None:
+            forecasts_col.create_index("forecast_id", unique=True)
+            forecasts_col.create_index("sensor_id")
+            forecasts_col.create_index("client_id")
+            forecasts_col.create_index("requested_at")
+
+        if webhooks_col is not None:
+            webhooks_col.create_index("webhook_id", unique=True)
 
         if datasets_col is not None:
             for doc in datasets_col.find({}, {"_id": 0}):
@@ -54,6 +78,12 @@ def init_persistence() -> None:
                 anomaly_id = doc.get("anomaly_id")
                 if anomaly_id:
                     _db_anomalies[anomaly_id] = doc
+
+        if forecasts_col is not None:
+            for doc in forecasts_col.find({}, {"_id": 0}):
+                forecast_id = doc.get("forecast_id")
+                if forecast_id:
+                    _db_forecasts[forecast_id] = doc
 
         if webhooks_col is not None:
             for doc in webhooks_col.find({}, {"_id": 0}):
@@ -126,12 +156,23 @@ def save_anomaly(anomaly_id: str, anomaly_data: Dict[str, Any]) -> None:
         collection.replace_one({"anomaly_id": anomaly_id}, anomaly_data, upsert=True)
 
 
+def save_forecast(forecast_id: str, forecast_data: Dict[str, Any]) -> None:
+    _db_forecasts[forecast_id] = forecast_data
+    collection = _get_collection("forecasts")
+    if collection is not None:
+        collection.replace_one({"forecast_id": forecast_id}, forecast_data, upsert=True)
+
+
 def get_anomaly(anomaly_id: str) -> Optional[Dict[str, Any]]:
     return _db_anomalies.get(anomaly_id)
 
 
 def get_all_anomalies() -> List[Dict[str, Any]]:
     return list(_db_anomalies.values())
+
+
+def get_all_forecasts() -> List[Dict[str, Any]]:
+    return list(_db_forecasts.values())
 
 
 # In-memory operational stores
@@ -162,3 +203,4 @@ db_datasets = _db_datasets
 db_trained_models = _db_trained_models
 db_ai_models = _db_ai_models
 db_model_config = _db_model_config
+db_forecasts = _db_forecasts

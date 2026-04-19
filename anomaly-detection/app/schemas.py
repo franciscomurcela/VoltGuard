@@ -10,6 +10,7 @@ class AnomalySummary(APIBaseModel):
     anomaly_id: str
     measurement_id: str
     source_id: str
+    client_id: Optional[str] = None
     timestamp: str
     severity: str
     model_id: Optional[str] = None
@@ -19,6 +20,7 @@ class AnomalyDetail(APIBaseModel):
     anomaly_id: str
     measurement_id: str
     source_id: str
+    client_id: Optional[str] = None
     timestamp: str
     trigger_metrics: Dict[str, Any]
     detection_method: str
@@ -50,6 +52,7 @@ class ForecastPoint(APIBaseModel):
 
 class ForecastResponse(APIBaseModel):
     sensor_id: str = Field(..., description="Sensor identifier")
+    client_id: Optional[str] = Field(None, description="Client identifier associated with sensor/data source")
     metric_name: str = Field(..., description="Metric name (e.g., 'voltage')")
     model_id: str = Field(..., description="Model ID used for forecast")
     forecasts: List[ForecastPoint] = Field(..., min_items=1, description="Forecast points")
@@ -118,6 +121,7 @@ class DatasetAnalysisConfig(APIBaseModel):
 
 class DatasetUploadRequest(APIBaseModel):
     source_id: str = Field(..., description="ID do sensor/fonte dos dados")
+    client_id: Optional[str] = Field(None, description="ID lógico do cliente/dono da medição")
     metric_name: str = Field(..., description="Nome da métrica (ex: voltage, current)")
     config: DatasetAnalysisConfig = Field(default_factory=DatasetAnalysisConfig)
     dataset: List[DatasetPoint] = Field(
@@ -129,6 +133,7 @@ class DatasetUploadRequest(APIBaseModel):
 class DatasetImportRequest(APIBaseModel):
     source_url: str = Field(..., pattern=r'^https?://', description="URL HTTP/HTTPS para CSV")
     source_id: str = Field(..., description="ID do sensor/fonte dos dados")
+    client_id: Optional[str] = Field(None, description="ID lógico do cliente/dono da medição")
     metric_name: str = Field(..., description="Nome da métrica (ex: voltage, current)")
     delimiter: Optional[str] = Field(None, description="Delimitador opcional (ex: ',', ';')")
     timestamp_column: Optional[str] = Field(None, description="Nome da coluna de timestamp")
@@ -151,6 +156,7 @@ class DatasetUploadResponse(APIBaseModel):
 class DatasetInfo(APIBaseModel):
     measurement_id: str
     source_id: str
+    client_id: Optional[str] = None
     metric_name: str
     rows: int
     rows_training: int
