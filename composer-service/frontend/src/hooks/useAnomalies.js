@@ -90,24 +90,19 @@ export default function useAnomalies() {
   }, [])
 
   const fetchAnomalyDetail = useCallback(async (id) => {
-    try {
-      if (USE_MOCK) {
-        setSelectedAnomaly({
-          anomaly_id: id,
-          source_id: 'node_01',
-          timestamp: new Date().toISOString(),
-          trigger_metrics: { voltage: 245.5, current: 85.2, power_factor: 0.92 },
-          detection_method: 'Prophet',
-          confidence_score: 0.87,
-        })
-      } else {
-        const res = await anomaliesApi.getById(id)
-        setSelectedAnomaly(res.data)
-      }
-    } catch (err) {
-      console.error('[useAnomalies] Detail failed:', err)
-      setError(err.message)
+    if (USE_MOCK) {
+      setSelectedAnomaly({
+        anomaly_id: id,
+        source_id: 'node_01',
+        timestamp: new Date().toISOString(),
+        trigger_metrics: { voltage: 245.5, current: 85.2, power_factor: 0.92 },
+        detection_method: 'Prophet',
+        confidence_score: 0.87,
+      })
+      return
     }
+    const res = await anomaliesApi.getById(id)
+    setSelectedAnomaly(res.data)
   }, [])
 
   const updateModelConfig = useCallback(async (config) => {

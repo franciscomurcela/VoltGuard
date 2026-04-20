@@ -2,7 +2,17 @@ import * as anomalyProxy from '../services/anomalyProxy.js'
 import * as notificationProxy from '../services/notificationProxy.js'
 import * as preferencesProxy from '../services/preferencesProxy.js'
 import * as oamProxy from '../services/oamProxy.js'
+import { getProcessingState } from '../state/processingState.js'
 import logger from '../utils/logger.js'
+
+/**
+ * GET /api/anomalies/processing-state/:sensorId
+ * Returns the last measurement_processed webhook event received for this sensor.
+ */
+export function getSensorProcessingState(req, res) {
+  const data = getProcessingState(req.params.sensorId)
+  res.json(data ?? { status: 'unknown', updated_at: null })
+}
 
 /**
  * GET /api/anomalies

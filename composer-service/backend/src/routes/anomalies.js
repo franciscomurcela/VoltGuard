@@ -8,6 +8,7 @@ import {
   updateModelConfig,
   simulateAnomalyNotification,
   exportAnomalies,
+  getSensorProcessingState,
 } from '../controllers/anomalyController.js'
 import { listModels, getForecast } from '../controllers/measurementController.js'
 
@@ -27,6 +28,9 @@ router.get('/models', listModels)
 
 // Forecasts per sensor
 router.get('/forecasts/:sensorId', getForecast)
+
+// Last measurement_processed state per sensor (fed by webhook)
+router.get('/processing-state/:sensorId', getSensorProcessingState)
 
 // Manual simulation of anomaly -> notifications flow
 router.post('/simulate-notification', requireRole('admin'), simulateAnomalyNotification)

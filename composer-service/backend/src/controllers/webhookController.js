@@ -1,5 +1,6 @@
 import * as notificationProxy from '../services/notificationProxy.js'
 import * as preferencesProxy from '../services/preferencesProxy.js'
+import { updateProcessingState } from '../state/processingState.js'
 import logger from '../utils/logger.js'
 
 /**
@@ -86,6 +87,15 @@ export async function handleAnomalyWebhook(req, res) {
 
   // Acknowledge immediately — anomaly service has a 5 s timeout per webhook call
   res.status(200).json({ status: 'received' })
+
+  if (event_type === 'measurement_processed') {
+    const { source_id, status, anomalies_detected, metric_name } = payload ?? {}
+    if (source_id) {
+      updateProcessingState(source_id, { status, anomalies_detected, metric_name })
+      logger.info({ source_id, status, anomalies_detected }, 'Webhook: measurement_processed — processing state updated')
+    }
+    return
+  }
 
   if (event_type !== 'anomaly_detected') {
     logger.debug({ event_type }, 'Webhook: ignoring non-anomaly event')
