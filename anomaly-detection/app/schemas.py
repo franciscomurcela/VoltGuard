@@ -60,6 +60,36 @@ class ForecastResponse(APIBaseModel):
     periods: int = Field(..., description="Number of periods forecasted")
 
 
+class LatestForecastResponse(APIBaseModel):
+    forecast_id: str
+    sensor_id: str
+    client_id: Optional[str] = None
+    metric_name: str
+    model_id: str
+    periods: int
+    last_training: Optional[str] = None
+    requested_at: Optional[str] = None
+    forecasts: List[ForecastPoint] = Field(default_factory=list)
+
+
+class SensorAnomalyAggregate(APIBaseModel):
+    source_id: str
+    client_id: Optional[str] = None
+    measurements_total: int
+    measurements_with_anomaly: int
+    anomalies_total: int
+    measurement_anomaly_rate: float
+    anomalies_per_measurement: float
+    latest_anomaly_id: Optional[str] = None
+    latest_anomaly_timestamp: Optional[str] = None
+    latest_severity: Optional[str] = None
+
+
+class SensorAnomalyAggregateResponse(APIBaseModel):
+    items: List[SensorAnomalyAggregate]
+    total_sensors: int
+
+
 class WebhookSubscription(APIBaseModel):
     target_url: str = Field(..., pattern=r'^https?://', description="URL do webhook (http/https)")
     event_type: str = Field(..., pattern=r'^(anomaly_detected|measurement_processed|all)$')

@@ -2,12 +2,13 @@ from datetime import datetime
 import importlib
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.deps import verify_token
-from app.schemas import AIModelInfo, ModelConfig, ForecastResponse, ForecastPoint
-from app.state import db_ai_models, db_model_config, db_datasets, db_trained_models, save_forecast, save_model_config
+from app.schemas import AIModelInfo, ModelConfig, ForecastResponse, ForecastPoint, LatestForecastResponse
+from app.state import db_ai_models, db_model_config, db_datasets, db_trained_models, get_latest_forecast, save_forecast, save_model_config
 
 logger = logging.getLogger("voltguard-api")
 router = APIRouter(tags=["3. Model Management"])
@@ -139,3 +140,38 @@ async def get_forecast(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao gerar forecast: {str(error)}",
         )
+
+
+@router.get("/v1/forecasts/latest/{sensor_id}", response_model=LatestForecastResponse)
+async def get_latest_sensor_forecast(
+    sensor_id: str,
+    metric_name: Optional[str] = None,
+    token: str = Depends(verify_token),
+):
+    latest = get_latest_forecast(sensor_id)
+    if not latest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Nenhum forecast persistido encontrado para sensor={sensor_id}.",
+        )
+
+    if metric_name and latest.get("metric_name") != metric_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Nenhum forecast persistido encontrado para sensor={sensor_id} "
+                f"com metric_name={metric_name}."
+            ),
+        )
+
+    return LatestForecastResponse(
+        forecast_id=latest.get("forecast_id", ""),
+        sensor_id=latest.get("sensor_id", sensor_id),
+        client_id=latest.get("client_id"),
+        metric_name=latest.get("metric_name", "voltage"),
+        model_id=latest.get("model_id", "model_prophet_v1"),
+        periods=int(latest.get("periods", 0)),
+        last_training=latest.get("last_training"),
+        requested_at=latest.get("requested_at"),
+        forecasts=[ForecastPoint(**point) for point in latest.get("forecasts", [])],
+    )

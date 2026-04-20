@@ -175,6 +175,19 @@ def get_all_forecasts() -> List[Dict[str, Any]]:
     return list(_db_forecasts.values())
 
 
+def get_forecasts_by_sensor(sensor_id: str) -> List[Dict[str, Any]]:
+    forecasts = [item for item in _db_forecasts.values() if item.get("sensor_id") == sensor_id]
+    forecasts.sort(key=lambda item: item.get("requested_at") or "", reverse=True)
+    return forecasts
+
+
+def get_latest_forecast(sensor_id: str) -> Optional[Dict[str, Any]]:
+    forecasts = get_forecasts_by_sensor(sensor_id)
+    if not forecasts:
+        return None
+    return forecasts[0]
+
+
 # In-memory operational stores
 _db_webhooks: Dict[str, Any] = {}
 _db_tokens = {"token_do_composer_123": "Energy Composer", "token_admin_999": "Admin Service"}
