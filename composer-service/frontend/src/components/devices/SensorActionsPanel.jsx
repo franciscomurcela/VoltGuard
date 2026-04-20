@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { sensorActionsApi, firmwaresApi } from '../../services/api'
+import useSensorAnomalyStats from '../../hooks/useSensorAnomalyStats'
+import useForecasts from '../../hooks/useForecasts'
 
 const STATUS_META = {
   active:   { label: 'Active',   color: 'var(--accent-green)'  },
@@ -164,6 +166,236 @@ function FirmwareUploadForm({ onDone, onCancel }) {
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Anomaly Stats Panel (2.2) ────────────────────────────────────────────────
+
+function AnomalyStatsPanel({ sensorId }) {
+  const { stats, loading, error, refetch } = useSensorAnomalyStats(sensorId)
+
+  const PROCESSING_STATUS_COLORS = {
+    completed: 'var(--accent-green)',
+    processing: 'var(--accent-blue)',
+    failed: 'var(--accent-red)',
+    pending: 'var(--accent-yellow)',
+    unknown: 'var(--text-ghost)',
+  }
+
+  return (
+    <div style={{
+      padding: '16px 20px',
+      borderTop: '1px solid var(--border-muted)',
+      background: 'rgba(255,255,255,0.008)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div className="label" style={{ fontSize: 9 }}>Anomaly Analysis Stats</div>
+        <button
+          onClick={refetch}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-ghost)', fontSize: 11, fontFamily: 'var(--font-mono)' }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {loading && (
+        <div className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)' }}>Loading stats…</div>
+      )}
+
+      {error && (
+        <div className="mono" style={{ fontSize: 11, color: 'var(--accent-red)' }}>✗ {error}</div>
+      )}
+
+      {!loading && !error && stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          {[
+            { label: 'Measurements', value: stats.totalMeasurements, color: 'var(--accent-blue)' },
+            { label: 'Anomalies', value: stats.totalAnomalies, color: 'var(--accent-red)' },
+            { label: 'Anomaly Ratio', value: stats.ratio, color: 'var(--accent-yellow)' },
+            {
+              label: 'Last Processing',
+              value: stats.lastProcessing?.status ?? 'unknown',
+              sub: stats.lastProcessing?.updated_at
+                ? new Date(stats.lastProcessing.updated_at).toLocaleTimeString()
+                : null,
+              color: PROCESSING_STATUS_COLORS[stats.lastProcessing?.status] ?? 'var(--text-ghost)',
+            },
+          ].map((s) => (
+            <div
+              key={s.label}
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg-inset)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <div className="mono" style={{ fontSize: 9, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>
+                {s.label}
+              </div>
+              <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: s.color }}>
+                {s.value}
+              </div>
+              {s.sub && (
+                <div className="mono" style={{ fontSize: 9, color: 'var(--text-ghost)', marginTop: 2 }}>{s.sub}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Forecast Panel (2.4) ─────────────────────────────────────────────────────
+
+const METRIC_OPTIONS = ['voltage', 'current', 'power_factor', 'active_power', 'reactive_power']
+const PERIOD_OPTIONS = [6, 12, 24, 48, 72]
+
+function ForecastPanel({ sensorId }) {
+  const { forecast, loading, error, fetchForecast, clearForecast } = useForecasts()
+  const [open, setOpen] = useState(false)
+  const [periods, setPeriods] = useState(24)
+  const [metric, setMetric] = useState('voltage')
+
+  const handleFetch = () => fetchForecast(sensorId, { periods, metric_name: metric })
+
+  const toggle = () => {
+    if (open) { clearForecast(); setOpen(false) }
+    else { setOpen(true); fetchForecast(sensorId, { periods, metric_name: metric }) }
+  }
+
+  return (
+    <div style={{
+      padding: '0 20px 16px',
+      borderTop: '1px solid var(--border-muted)',
+      paddingTop: 16,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: open ? 14 : 0 }}>
+        <div className="label" style={{ fontSize: 9 }}>Forecast</div>
+        <button
+          onClick={toggle}
+          style={{
+            padding: '3px 12px', fontSize: 11,
+            background: open ? 'var(--accent-red-dim)' : 'rgba(139,92,246,0.1)',
+            border: `1px solid ${open ? 'rgba(239,68,68,0.25)' : 'rgba(139,92,246,0.25)'}`,
+            borderRadius: 'var(--radius-sm)',
+            color: open ? 'var(--accent-red)' : 'var(--accent-purple)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {open ? 'Close' : '▾ Show Forecast'}
+        </button>
+      </div>
+
+      {open && (
+        <div>
+          {/* Controls */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div>
+              <label className="label" style={{ display: 'block', marginBottom: 3, fontSize: 9 }}>Metric</label>
+              <select
+                value={metric}
+                onChange={(e) => setMetric(e.target.value)}
+                style={{ fontSize: 11 }}
+              >
+                {METRIC_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label" style={{ display: 'block', marginBottom: 3, fontSize: 9 }}>Periods (h)</label>
+              <select
+                value={periods}
+                onChange={(e) => setPeriods(Number(e.target.value))}
+                style={{ fontSize: 11 }}
+              >
+                {PERIOD_OPTIONS.map((p) => <option key={p} value={p}>{p}h</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <button
+                onClick={handleFetch}
+                disabled={loading}
+                style={{
+                  padding: '6px 14px', fontSize: 11, fontWeight: 500,
+                  background: 'rgba(139,92,246,0.1)',
+                  border: '1px solid rgba(139,92,246,0.25)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--accent-purple)',
+                  cursor: loading ? 'wait' : 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                {loading ? 'Loading…' : '↻ Fetch'}
+              </button>
+            </div>
+          </div>
+
+          {/* Error state */}
+          {error && (
+            <div style={{
+              padding: '10px 14px',
+              background: 'rgba(239,68,68,0.07)',
+              border: '1px solid rgba(239,68,68,0.2)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 10,
+            }}>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--accent-red)' }}>✗ {error}</span>
+            </div>
+          )}
+
+          {/* Forecast table */}
+          {!error && forecast && (
+            <div>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--text-ghost)', marginBottom: 6 }}>
+                {forecast.metric_name} · model: {forecast.model_id} · trained: {forecast.last_training ? new Date(forecast.last_training).toLocaleDateString() : '—'}
+              </div>
+              <div style={{ overflowX: 'auto', maxHeight: 200, overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      {['Timestamp', 'Forecast', 'Lower', 'Upper'].map((h) => (
+                        <th key={h} className="mono" style={{
+                          textAlign: 'left', padding: '4px 10px', fontSize: 9,
+                          color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: 0.8,
+                          borderBottom: '1px solid var(--border-subtle)', fontWeight: 500,
+                        }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(forecast.forecasts ?? []).map((row, i) => (
+                      <tr key={i}>
+                        <td className="mono" style={{ padding: '5px 10px', color: 'var(--text-faint)', fontSize: 10 }}>
+                          {new Date(row.timestamp).toLocaleString()}
+                        </td>
+                        <td className="mono" style={{ padding: '5px 10px', color: 'var(--accent-purple)', fontWeight: 600 }}>
+                          {typeof row.yhat === 'number' ? row.yhat.toFixed(3) : '—'}
+                        </td>
+                        <td className="mono" style={{ padding: '5px 10px', color: 'var(--text-muted)' }}>
+                          {typeof row.yhat_lower === 'number' ? row.yhat_lower.toFixed(3) : '—'}
+                        </td>
+                        <td className="mono" style={{ padding: '5px 10px', color: 'var(--text-muted)' }}>
+                          {typeof row.yhat_upper === 'number' ? row.yhat_upper.toFixed(3) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {(forecast.forecasts ?? []).length === 0 && (
+                <div className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)', textAlign: 'center', padding: 16 }}>
+                  No forecast data returned.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -452,6 +684,12 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
           <Feedback feedback={feedback} />
         </div>
       )}
+
+      {/* ── Anomaly Stats (2.2) ──────────────────────────────────────────── */}
+      <AnomalyStatsPanel sensorId={device.id} />
+
+      {/* ── Forecast (2.4) ──────────────────────────────────────────────── */}
+      <ForecastPanel sensorId={device.id} />
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
       <div style={{

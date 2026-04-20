@@ -83,9 +83,16 @@ export const healthApi = {
 export const anomaliesApi = {
   getAll: (params) => api.get('/anomalies', { params }),
   getById: (id) => api.get(`/anomalies/${id}`),
+  getBySensor: (sourceId, params = {}) => api.get('/anomalies', { params: { source_id: sourceId, limit: 1000, ...params } }),
   getSummary: () => api.get('/anomalies/summary'),
   getModelConfig: () => api.get('/anomalies/model-config'),
   updateModelConfig: (data) => api.put('/anomalies/model-config', data),
+  getForecast: (sensorId, params = {}) => api.get(`/anomalies/forecasts/${sensorId}`, { params }),
+  getProcessingState: (sensorId) => api.get(`/anomalies/processing-state/${sensorId}`),
+}
+
+export const measurementsApi = {
+  getBySensor: (sourceId) => api.get('/measurements', { params: { source_id: sourceId } }),
 }
 
 export const notificationsApi = {

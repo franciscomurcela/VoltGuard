@@ -11,6 +11,7 @@ export default function Anomalies() {
     modelConfig,
     selectedAnomaly,
     loading,
+    error,
     fetchAnomalies,
     fetchAnomalyDetail,
     updateModelConfig,
@@ -19,9 +20,19 @@ export default function Anomalies() {
 
   const [sourceFilter, setSourceFilter] = useState('')
   const [showConfig, setShowConfig] = useState(false)
+  const [detailError, setDetailError] = useState(null)
 
   const handleFilter = () => {
     fetchAnomalies({ source_id: sourceFilter || undefined })
+  }
+
+  const handleSelectAnomaly = async (id) => {
+    setDetailError(null)
+    try {
+      await fetchAnomalyDetail(id)
+    } catch (err) {
+      setDetailError(err?.response?.data?.message || err.message || `Could not load anomaly ${id}`)
+    }
   }
 
   if (loading) {
@@ -102,9 +113,45 @@ export default function Anomalies() {
         </div>
       )}
 
+      {/* List fetch error */}
+      {error && (
+        <div style={{
+          marginBottom: 16,
+          padding: '10px 16px',
+          background: 'rgba(239,68,68,0.07)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--accent-red)' }}>
+            ✗ Failed to load anomalies: {error}
+          </span>
+          <button onClick={() => fetchAnomalies()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-red)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Detail fetch error */}
+      {detailError && (
+        <div style={{
+          marginBottom: 16,
+          padding: '10px 16px',
+          background: 'rgba(239,68,68,0.07)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--accent-red)' }}>
+            ✗ {detailError}
+          </span>
+          <button onClick={() => setDetailError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-red)', fontSize: 16 }}>×</button>
+        </div>
+      )}
+
       {/* Anomaly Detail */}
       {selectedAnomaly && (
-        <AnomalyDetail anomaly={selectedAnomaly} onClose={clearSelected} />
+        <AnomalyDetail anomaly={selectedAnomaly} onClose={() => { clearSelected(); setDetailError(null) }} />
       )}
 
       {/* Source Filter */}
@@ -147,7 +194,7 @@ export default function Anomalies() {
       </div>
 
       {/* Anomaly Table */}
-      <AnomalyTable anomalies={anomalies} onSelect={fetchAnomalyDetail} />
+      <AnomalyTable anomalies={anomalies} onSelect={handleSelectAnomaly} />
     </div>
   )
 }
