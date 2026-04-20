@@ -3,6 +3,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
+ARG VITE_KEYCLOAK_URL=http://localhost:8081
+ARG VITE_AUTH_DISABLED=false
+ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL
+ENV VITE_AUTH_DISABLED=$VITE_AUTH_DISABLED
 RUN npm run build
 
 FROM nginx:alpine AS runtime

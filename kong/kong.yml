@@ -68,3 +68,18 @@ services:
       - name: anomaly
         hosts:
           - anomaly.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # KEYCLOAK — Auth
+  # auth.voltguard.pt/* → keycloak:8080
+  #
+  # Routing Keycloak through Kong so the frontend can reach it from the same
+  # network context (auth.voltguard.pt), avoiding cross-origin CORS issues
+  # when the JS adapter fetches OIDC endpoints.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: keycloak
+    url: http://keycloak:8080
+    routes:
+      - name: auth
+        hosts:
+          - auth.voltguard.pt

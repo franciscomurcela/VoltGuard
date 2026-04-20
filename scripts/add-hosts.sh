@@ -8,6 +8,7 @@ HOSTS=(
   "oam.voltguard.pt"
   "notifications.voltguard.pt"
   "anomaly.voltguard.pt"
+  "auth.voltguard.pt"
 )
 
 ADDED=0

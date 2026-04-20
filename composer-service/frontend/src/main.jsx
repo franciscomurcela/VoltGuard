@@ -1,45 +1,29 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { ReactKeycloakProvider } from '@react-keycloak/web'
-import keycloak, { initOptions } from './config/keycloak'
+import { KeycloakProvider } from './contexts/KeycloakContext'
 import App from './App'
 import './styles/global.css'
 
+const AUTH_DISABLED = import.meta.env.VITE_AUTH_DISABLED === 'true'
 const isPublicPreferencesRoute = window.location.pathname.startsWith('/preferences')
 
-// ─── Keycloak Event Logger (dev only) ───────────────────────────────────────
-const onKeycloakEvent = (event, error) => {
-  if (import.meta.env.DEV) {
-    console.log('[Keycloak]', event, error || '')
-  }
-}
+// Skip Keycloak entirely when auth is disabled or on public routes.
+// keycloak-js is initialised directly in KeycloakContext (no @react-keycloak/web).
+const needsProvider = !AUTH_DISABLED && !isPublicPreferencesRoute
 
-const onKeycloakTokens = (tokens) => {
-  if (import.meta.env.DEV) {
-    console.log('[Keycloak] Token refreshed')
-  }
-}
-
-// ─── Render ─────────────────────────────────────────────────────────────────
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {isPublicPreferencesRoute ? (
-      <App />
-    ) : (
-      <ReactKeycloakProvider
-        authClient={keycloak}
-        initOptions={initOptions}
-        onEvent={onKeycloakEvent}
-        onTokens={onKeycloakTokens}
-        LoadingComponent={<LoadingScreen />}
-      >
+    {needsProvider ? (
+      <KeycloakProvider loadingComponent={<LoadingScreen />}>
         <App />
-      </ReactKeycloakProvider>
+      </KeycloakProvider>
+    ) : (
+      <App />
     )}
   </React.StrictMode>
 )
 
-// ─── Loading Screen (shown while Keycloak initializes) ──────────────────────
+// ─── Loading Screen ──────────────────────────────────────────────────────────
 function LoadingScreen() {
   return (
     <div
@@ -70,14 +54,7 @@ function LoadingScreen() {
         }}
       />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <span
-        style={{
-          fontSize: 12,
-          color: '#666',
-          fontFamily: "'JetBrains Mono', monospace",
-          letterSpacing: 1,
-        }}
-      >
+      <span style={{ fontSize: 12, color: '#666', fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>
         Initializing...
       </span>
     </div>
