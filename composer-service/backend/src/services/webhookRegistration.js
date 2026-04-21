@@ -22,29 +22,32 @@ export async function registerAnomalyWebhook() {
     })
 
     const existing = listRes.data?.webhooks ?? listRes.data ?? []
-    const alreadyRegistered =
-      Array.isArray(existing) &&
-      existing.some(
-        (wh) => wh.target_url === targetUrl && wh.status === 'active',
+    const eventsToRegister = ['anomaly_detected', 'measurement_processed']
+    const registerUrl = getServiceUrl('anomaly', '/v1/webhooks')
+
+    for (const eventType of eventsToRegister) {
+      const already =
+        Array.isArray(existing) &&
+        existing.some(
+          (wh) => wh.target_url === targetUrl && wh.status === 'active' && wh.event_type === eventType,
+        )
+
+      if (already) {
+        logger.info({ targetUrl, eventType }, 'Anomaly webhook already registered for event — skipping')
+        continue
+      }
+
+      const res = await client.post(
+        registerUrl,
+        { target_url: targetUrl, event_type: eventType },
+        { headers: { 'X-App-Token': APP_TOKEN }, timeout: 5000 },
       )
 
-    if (alreadyRegistered) {
-      logger.info({ targetUrl }, 'Anomaly webhook already registered — skipping')
-      return
+      logger.info(
+        { webhookId: res.data?.webhook_id, targetUrl, eventType },
+        'Anomaly webhook registered',
+      )
     }
-
-    // Register the webhook for anomaly_detected events
-    const registerUrl = getServiceUrl('anomaly', '/v1/webhooks')
-    const res = await client.post(
-      registerUrl,
-      { target_url: targetUrl, event_type: 'anomaly_detected' },
-      { headers: { 'X-App-Token': APP_TOKEN }, timeout: 5000 },
-    )
-
-    logger.info(
-      { webhookId: res.data?.webhook_id, targetUrl },
-      'Anomaly webhook registered — notifications pipeline active',
-    )
   } catch (err) {
     // Non-fatal: the pipeline will be inactive until the next restart succeeds
     logger.warn(

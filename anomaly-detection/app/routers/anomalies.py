@@ -40,6 +40,7 @@ async def list_anomalies(
             anomaly_id=a.get("anomaly_id", ""),
             measurement_id=a.get("measurement_id", ""),
             source_id=a.get("source_id", ""),
+            metric_name=a.get("metric_name"),
             timestamp=a.get("timestamp", ""),
             severity=a.get("severity", "medium"),
         )

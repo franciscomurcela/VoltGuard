@@ -11,6 +11,7 @@ class AnomalySummary(APIBaseModel):
     measurement_id: str
     source_id: str
     client_id: Optional[str] = None
+    metric_name: Optional[str] = None
     timestamp: str
     severity: str
     model_id: Optional[str] = None
@@ -21,6 +22,7 @@ class AnomalyDetail(APIBaseModel):
     measurement_id: str
     source_id: str
     client_id: Optional[str] = None
+    metric_name: Optional[str] = None
     timestamp: str
     trigger_metrics: Dict[str, Any]
     detection_method: str
@@ -194,6 +196,7 @@ class DatasetInfo(APIBaseModel):
     period_start: str
     period_end: str
     config: Optional[Dict[str, Any]] = None
+    points: Optional[List[DatasetPoint]] = None
     training_status: str
     last_trained: Optional[str] = None
 

@@ -60,6 +60,18 @@ export async function getMeasurement(req, res, next) {
 }
 
 /**
+ * GET /api/measurements/:id/full
+ */
+export async function getMeasurementFull(req, res, next) {
+  try {
+    const data = await anomalyProxy.getMeasurementFullById(req, req.params.id)
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
  * POST /api/measurements
  * Body: DatasetUploadRequest JSON
  */

@@ -56,6 +56,22 @@ export async function getSummary(req, res, next) {
 }
 
 /**
+ * GET /api/anomalies/by-sensor
+ * Optional query: source_id, client_id
+ */
+export async function getBySensorSummary(req, res, next) {
+  try {
+    const data = await anomalyProxy.getAnomaliesBySensor(req, {
+      sourceId: req.query.source_id,
+      clientId: req.query.client_id,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
  * GET /api/anomalies/model-config
  */
 export async function getModelConfig(req, res, next) {
@@ -75,6 +91,36 @@ export async function updateModelConfig(req, res, next) {
     const data = await anomalyProxy.updateModelConfig(req, req.body)
     logger.info({ config: req.body }, 'Model config updated via compositor')
     res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/anomalies/forecasts/latest/:sensorId
+ */
+export async function getLatestForecast(req, res, next) {
+  try {
+    const data = await anomalyProxy.getLatestForecast(req, req.params.sensorId, {
+      metricName: req.query.metric_name,
+    })
+    res.json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/anomalies/analysis/:sensorId
+ * Optional body/query: metric_name
+ */
+export async function triggerSensorAnalysis(req, res, next) {
+  try {
+    const metricName = req.body?.metric_name || req.query.metric_name
+    const data = await anomalyProxy.reprocessSensorMeasurements(req, req.params.sensorId, {
+      metricName,
+    })
+    res.status(202).json(data)
   } catch (err) {
     next(err)
   }

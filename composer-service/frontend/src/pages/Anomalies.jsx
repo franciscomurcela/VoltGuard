@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import useAnomalies from '../hooks/useAnomalies'
+import useDevices from '../hooks/useDevices'
 import AnomalyTable from '../components/anomalies/AnomalyTable'
 import AnomalyDetail from '../components/anomalies/AnomalyDetail'
 import ModelConfig from '../components/anomalies/ModelConfig'
@@ -17,10 +18,26 @@ export default function Anomalies() {
     updateModelConfig,
     clearSelected,
   } = useAnomalies()
+  const { devices } = useDevices()
 
   const [sourceFilter, setSourceFilter] = useState('')
+  const [registeredOnly, setRegisteredOnly] = useState(true)
   const [showConfig, setShowConfig] = useState(false)
   const [detailError, setDetailError] = useState(null)
+
+  const deviceMap = new Map((devices || []).map((d) => [d.id, d]))
+  const sourceOptions = (devices || []).map((d) => ({ value: d.id, label: `${d.id} · ${d.name}` }))
+
+  const rawItems = anomalies.items || []
+  const displayedItems = rawItems.filter((item) => {
+    if (!registeredOnly) return true
+    return deviceMap.has(item.source_id)
+  })
+  const displayedAnomalies = {
+    ...anomalies,
+    items: displayedItems,
+    total: displayedItems.length,
+  }
 
   const handleFilter = () => {
     fetchAnomalies({ source_id: sourceFilter || undefined })
@@ -54,7 +71,7 @@ export default function Anomalies() {
             Anomaly Detection
           </h2>
           <p className="mono" style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>
-            {anomalies.total || 0} anomalies detected · {summary?.jobs_completed || 0} jobs processed
+            {displayedAnomalies.total || 0} anomalies shown · {summary?.jobs_completed || 0} jobs processed
           </p>
         </div>
         <button
@@ -155,13 +172,17 @@ export default function Anomalies() {
       )}
 
       {/* Source Filter */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-        <input
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
-          placeholder="Filter by source_id (e.g. node_01)"
-          style={{ flex: 1, maxWidth: 320 }}
-        />
+          style={{ flex: 1, minWidth: 320, maxWidth: 520 }}
+        >
+          <option value="">All registered sensors</option>
+          {sourceOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
         <button
           onClick={handleFilter}
           style={{
@@ -191,10 +212,18 @@ export default function Anomalies() {
             Clear
           </button>
         )}
+        <label className="mono" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-faint)' }}>
+          <input
+            type="checkbox"
+            checked={registeredOnly}
+            onChange={(e) => setRegisteredOnly(e.target.checked)}
+          />
+          Show only registered sensors
+        </label>
       </div>
 
       {/* Anomaly Table */}
-      <AnomalyTable anomalies={anomalies} onSelect={handleSelectAnomaly} />
+      <AnomalyTable anomalies={displayedAnomalies} onSelect={handleSelectAnomaly} deviceMap={deviceMap} />
     </div>
   )
 }

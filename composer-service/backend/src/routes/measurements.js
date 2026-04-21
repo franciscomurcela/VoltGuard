@@ -5,6 +5,7 @@ import {
   listMeasurements,
   getIngestionStatus,
   getMeasurement,
+  getMeasurementFull,
   uploadMeasurementsJson,
   uploadMeasurementsCsv,
   importMeasurements,
@@ -27,6 +28,7 @@ router.post('/',       requireRole('admin'), uploadMeasurementsJson)
 
 // List and detail (any authenticated user)
 router.get('/',    listMeasurements)
+router.get('/:id/full', getMeasurementFull)
 router.get('/:id', getMeasurement)
 
 export default router

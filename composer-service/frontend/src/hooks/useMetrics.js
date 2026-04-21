@@ -121,25 +121,40 @@ export default function useMetrics() {
           cache: pushSparkValue(prev.cache, 4000 + Math.floor(Math.random() * 4000)),
         }))
       } else {
-        const [metricsRes, districtsRes, healthRes] = await Promise.all([
+        const [metricsRes, districtsRes, healthRes] = await Promise.allSettled([
           metricsApi.getSummary(),
           metricsApi.getDistricts(),
           healthApi.check(),
         ])
-        setMetrics(metricsRes.data)
 
-        // Normalize: real API returns { id, name, count }
-        // Keep both count (PortugalMap) and requests/rate (Dashboard) fields
-        const normalized = (Array.isArray(districtsRes.data) ? districtsRes.data : []).map((d) => ({
-          id: d.id || d.name?.toLowerCase(),
-          name: d.name,
-          count: d.count ?? 0,
-          requests: d.count ?? 0, // Dashboard uses requests
-          rate: 0,                // OAM doesn't provide req/s per district
-        }))
-        setDistricts(normalized)
+        if (metricsRes.status === 'fulfilled') {
+          setMetrics(metricsRes.value.data)
+        }
 
-        setServiceHealth(healthRes.data)
+        if (districtsRes.status === 'fulfilled') {
+          // Normalize: real API returns { id, name, count }
+          // Keep both count (PortugalMap) and requests/rate (Dashboard) fields
+          const normalized = (Array.isArray(districtsRes.value.data) ? districtsRes.value.data : []).map((d) => ({
+            id: d.id || d.name?.toLowerCase(),
+            name: d.name,
+            count: d.count ?? 0,
+            requests: d.count ?? 0, // Dashboard uses requests
+            rate: 0,                // OAM doesn't provide req/s per district
+          }))
+          setDistricts(normalized)
+        }
+
+        if (healthRes.status === 'fulfilled') {
+          setServiceHealth(healthRes.value.data)
+        }
+
+        const failures = [metricsRes, districtsRes, healthRes].filter((r) => r.status === 'rejected')
+        if (failures.length > 0 && failures.length < 3) {
+          console.warn('[useMetrics] Partial fetch failure; keeping last known values', failures)
+        }
+        if (failures.length === 3) {
+          throw failures[0].reason || new Error('Metrics endpoints unavailable')
+        }
       }
       setError(null)
     } catch (err) {

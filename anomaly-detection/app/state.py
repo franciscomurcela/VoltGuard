@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 import os
 import importlib
 import logging
@@ -44,6 +45,7 @@ def init_persistence() -> None:
         forecasts_col = _get_collection("forecasts")
         webhooks_col = _get_collection("webhooks")
         model_col = _get_collection("model_config")
+        trained_models_col = _get_collection("trained_models")
 
         if datasets_col is not None:
             datasets_col.create_index("measurement_id", unique=True)
@@ -66,6 +68,12 @@ def init_persistence() -> None:
 
         if webhooks_col is not None:
             webhooks_col.create_index("webhook_id", unique=True)
+
+        if trained_models_col is not None:
+            trained_models_col.create_index("model_key", unique=True)
+            trained_models_col.create_index("source_id")
+            trained_models_col.create_index("metric_name")
+            trained_models_col.create_index("updated_at")
 
         if datasets_col is not None:
             for doc in datasets_col.find({}, {"_id": 0}):
@@ -91,6 +99,12 @@ def init_persistence() -> None:
                 if webhook_id:
                     _db_webhooks[webhook_id] = doc
 
+        if trained_models_col is not None:
+            for doc in trained_models_col.find({}, {"_id": 0}):
+                model_key = doc.get("model_key")
+                if model_key and doc.get("serialized_model"):
+                    _db_trained_model_docs[model_key] = doc
+
         if model_col is not None:
             doc = model_col.find_one({"model_id": _db_model_config["model_id"]}, {"_id": 0})
             if doc:
@@ -109,11 +123,56 @@ def is_persistence_enabled() -> bool:
     return _mongo_enabled
 
 
+MAX_STORED_DATASET_POINTS = 2000
+
+
+def _truncate_points(points: List[Dict[str, Any]], max_points: int) -> List[Dict[str, Any]]:
+    total = len(points)
+    if total <= max_points:
+        return points
+    if max_points < 2:
+        return [points[0]]
+
+    # Evenly sample across the entire timeseries to preserve trend shape.
+    step = (total - 1) / (max_points - 1)
+    sampled = []
+    seen = set()
+    for i in range(max_points):
+        idx = int(round(i * step))
+        if idx not in seen and idx < total:
+            sampled.append(points[idx])
+            seen.add(idx)
+
+    if sampled[-1] is not points[-1]:
+        sampled[-1] = points[-1]
+    return sampled
+
+
+def _sanitize_dataset_for_storage(dataset_data: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(dataset_data)
+    points = payload.get("points")
+    if not isinstance(points, list):
+        return payload
+
+    total_points = len(points)
+    if total_points <= MAX_STORED_DATASET_POINTS:
+        payload["stored_points"] = total_points
+        payload["points_truncated"] = False
+        return payload
+
+    payload["points"] = _truncate_points(points, MAX_STORED_DATASET_POINTS)
+    payload["stored_points"] = len(payload["points"])
+    payload["total_points"] = total_points
+    payload["points_truncated"] = True
+    return payload
+
+
 def save_dataset(measurement_id: str, dataset_data: Dict[str, Any]) -> None:
-    _db_datasets[measurement_id] = dataset_data
+    persisted_dataset = _sanitize_dataset_for_storage(dataset_data)
+    _db_datasets[measurement_id] = persisted_dataset
     collection = _get_collection("datasets")
     if collection is not None:
-        collection.replace_one({"measurement_id": measurement_id}, dataset_data, upsert=True)
+        collection.replace_one({"measurement_id": measurement_id}, persisted_dataset, upsert=True)
 
 
 def update_dataset(measurement_id: str, updates: Dict[str, Any]) -> None:
@@ -163,6 +222,57 @@ def save_forecast(forecast_id: str, forecast_data: Dict[str, Any]) -> None:
         collection.replace_one({"forecast_id": forecast_id}, forecast_data, upsert=True)
 
 
+def save_trained_model(source_id: str, metric_name: str, model: Any) -> None:
+    model_key = f"{source_id}:{metric_name}"
+    _db_trained_models[model_key] = model
+
+    collection = _get_collection("trained_models")
+    if collection is None:
+        return
+
+    try:
+        serialize_mod = importlib.import_module("prophet.serialize")
+        serialized_model = serialize_mod.model_to_json(model)
+        payload = {
+            "model_key": model_key,
+            "source_id": source_id,
+            "metric_name": metric_name,
+            "serialized_model": serialized_model,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        _db_trained_model_docs[model_key] = payload
+        collection.replace_one({"model_key": model_key}, payload, upsert=True)
+    except Exception as error:
+        logger.warning("⚠️ Falha ao persistir modelo treinado (%s)", error)
+
+
+def get_trained_model(source_id: str, metric_name: str) -> Optional[Any]:
+    model_key = f"{source_id}:{metric_name}"
+    cached = _db_trained_models.get(model_key)
+    if cached is not None:
+        return cached
+
+    doc = _db_trained_model_docs.get(model_key)
+    if not doc:
+        collection = _get_collection("trained_models")
+        if collection is not None:
+            doc = collection.find_one({"model_key": model_key}, {"_id": 0})
+            if doc and doc.get("serialized_model"):
+                _db_trained_model_docs[model_key] = doc
+
+    if not doc or not doc.get("serialized_model"):
+        return None
+
+    try:
+        serialize_mod = importlib.import_module("prophet.serialize")
+        model = serialize_mod.model_from_json(doc["serialized_model"])
+        _db_trained_models[model_key] = model
+        return model
+    except Exception as error:
+        logger.warning("⚠️ Falha ao restaurar modelo treinado (%s)", error)
+        return None
+
+
 def get_anomaly(anomaly_id: str) -> Optional[Dict[str, Any]]:
     return _db_anomalies.get(anomaly_id)
 
@@ -181,8 +291,10 @@ def get_forecasts_by_sensor(sensor_id: str) -> List[Dict[str, Any]]:
     return forecasts
 
 
-def get_latest_forecast(sensor_id: str) -> Optional[Dict[str, Any]]:
+def get_latest_forecast(sensor_id: str, metric_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     forecasts = get_forecasts_by_sensor(sensor_id)
+    if metric_name is not None:
+        forecasts = [item for item in forecasts if item.get("metric_name") == metric_name]
     if not forecasts:
         return None
     return forecasts[0]
@@ -193,6 +305,7 @@ _db_webhooks: Dict[str, Any] = {}
 _db_tokens = {"token_do_composer_123": "Energy Composer", "token_admin_999": "Admin Service"}
 _db_datasets: Dict[str, Any] = {}
 _db_trained_models: Dict[str, Any] = {}
+_db_trained_model_docs: Dict[str, Dict[str, Any]] = {}
 _db_ai_models = {
     "model_prophet_v1": {
         "model_id": "model_prophet_v1",
