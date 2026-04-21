@@ -4,6 +4,12 @@ export default function AnomalyDetail({ anomaly, onClose }) {
   const confidencePercent = Math.round((anomaly.confidence_score || 0) * 100)
   const confidenceColor = confidencePercent > 85 ? 'var(--accent-red)' : confidencePercent > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)'
 
+  const formatMetricValue = (value) => {
+    if (typeof value === 'number') return value.toFixed(2)
+    if (value && typeof value === 'object') return JSON.stringify(value)
+    return String(value)
+  }
+
   return (
     <div
       className="animate-scale-in"
@@ -59,6 +65,18 @@ export default function AnomalyDetail({ anomaly, onClose }) {
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Metric</span>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--accent-purple)', fontWeight: 600 }}>
+                {anomaly.metric_name || '—'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Severity</span>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--accent-orange)', fontWeight: 600 }}>
+                {(anomaly.severity || '—').toUpperCase()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Detected</span>
               <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                 {new Date(anomaly.timestamp).toLocaleString()}
@@ -84,7 +102,7 @@ export default function AnomalyDetail({ anomaly, onClose }) {
                   {key.replace(/_/g, ' ')}
                 </span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {typeof value === 'number' ? value.toFixed(2) : value}
+                  {formatMetricValue(value)}
                 </span>
               </div>
             ))}

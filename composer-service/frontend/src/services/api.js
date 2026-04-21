@@ -72,27 +72,36 @@ export const devicesApi = {
 }
 
 export const metricsApi = {
-  getSummary: () => api.get('/metrics'),
-  getDistricts: () => api.get('/districts/stats'),
+  getSummary: () => api.get('/metrics', { timeout: 30000 }),
+  getDistricts: () => api.get('/districts/stats', { timeout: 30000 }),
 }
 
 export const healthApi = {
-  check: () => api.get('/health'),
+  check: () => api.get('/health', { timeout: 30000 }),
 }
 
 export const anomaliesApi = {
   getAll: (params) => api.get('/anomalies', { params }),
   getById: (id) => api.get(`/anomalies/${id}`),
   getBySensor: (sourceId, params = {}) => api.get('/anomalies', { params: { source_id: sourceId, limit: 1000, ...params } }),
+  getBySensorSummary: (sourceId, params = {}) => api.get('/anomalies/by-sensor', { params: { source_id: sourceId, ...params } }),
   getSummary: () => api.get('/anomalies/summary'),
   getModelConfig: () => api.get('/anomalies/model-config'),
   updateModelConfig: (data) => api.put('/anomalies/model-config', data),
-  getForecast: (sensorId, params = {}) => api.get(`/anomalies/forecasts/${sensorId}`, { params }),
+  getForecast: (sensorId, params = {}) => api.get(`/anomalies/forecasts/${sensorId}`, { params, timeout: 120000 }),
+  getLatestForecast: (sensorId, params = {}) => api.get(`/anomalies/forecasts/latest/${sensorId}`, { params }),
+  triggerAnalysis: (sensorId, data = {}) => api.post(`/anomalies/analysis/${sensorId}`, data, { timeout: 120000 }),
   getProcessingState: (sensorId) => api.get(`/anomalies/processing-state/${sensorId}`),
 }
 
 export const measurementsApi = {
   getBySensor: (sourceId) => api.get('/measurements', { params: { source_id: sourceId } }),
+  ingestJson: (data) => api.post('/measurements', data, { timeout: 120000 }),
+  ingestCsv: (formData) => api.post('/measurements/csv', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  }),
+  importFromUrl: (data) => api.post('/measurements/import', data, { timeout: 120000 }),
 }
 
 export const notificationsApi = {

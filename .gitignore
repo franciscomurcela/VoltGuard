@@ -59,5 +59,6 @@ Thumbs.db
 
 # Local test CSVs
 composer-service/sensors_import_clean.csv
+composer-service/sensors_import*.csv
 
 ANOMALY_COMPOSER_IMPLEMENTATION_PLAN.txt

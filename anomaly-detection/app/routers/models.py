@@ -2,12 +2,14 @@ from datetime import datetime
 import importlib
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.deps import verify_token
-from app.schemas import AIModelInfo, ModelConfig, ForecastResponse, ForecastPoint
-from app.state import db_ai_models, db_model_config, db_datasets, db_trained_models, save_forecast, save_model_config
+from app.schemas import AIModelInfo, ModelConfig, ForecastResponse, ForecastPoint, LatestForecastResponse
+from app.state import db_ai_models, db_model_config, db_datasets, get_latest_forecast, get_trained_model, save_forecast, save_model_config, save_trained_model
+from app.pipeline import _prepare_timeseries
 
 logger = logging.getLogger("voltguard-api")
 router = APIRouter(tags=["3. Model Management"])
@@ -73,24 +75,51 @@ async def get_forecast(
 ):
     try:
         pd = importlib.import_module("pandas")
-        model = db_trained_models.get(f"{sensor_id}:{metric_name}")
-        if not model:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Nenhum modelo treinado encontrado para sensor={sensor_id}, metric={metric_name}. Execute medições primeiro.",
-            )
-
-        last_date = datetime.now()
-        future_dates = pd.date_range(start=last_date, periods=periods + 1, freq="h")[1:]
-        future_df = pd.DataFrame({"ds": future_dates})
-
-        forecast = model.predict(future_df)
 
         related_datasets = [
             item for item in db_datasets.values()
             if item.get("source_id") == sensor_id and item.get("metric_name") == metric_name
         ]
         related_datasets.sort(key=lambda item: item.get("uploaded_at") or "", reverse=True)
+
+        model = get_trained_model(sensor_id, metric_name)
+        if not model:
+            latest_dataset = related_datasets[0] if related_datasets else None
+            points = latest_dataset.get("points") if latest_dataset else None
+            if not points:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Nenhum modelo treinado encontrado para sensor={sensor_id}, metric={metric_name}. Execute medições primeiro.",
+                )
+
+            df = _prepare_timeseries(points, latest_dataset.get("config") or {})
+            if len(df) < 6:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=(
+                        f"Dados insuficientes para treinar forecast em sensor={sensor_id}, "
+                        f"metric={metric_name}."
+                    ),
+                )
+
+            split_idx = max(1, min(int(len(df) * 0.8), len(df) - 1))
+            train_df = df.iloc[:split_idx][["ds", "y"]]
+            Prophet = importlib.import_module("prophet").Prophet
+            model = Prophet(
+                interval_width=db_model_config.get("prophet_uncertainty_interval", 0.95),
+                daily_seasonality=True,
+                weekly_seasonality=True,
+                yearly_seasonality=False,
+                mcmc_samples=0,
+            )
+            model.fit(train_df)
+            save_trained_model(sensor_id, metric_name, model)
+
+        last_date = datetime.now()
+        future_dates = pd.date_range(start=last_date, periods=periods + 1, freq="h")[1:]
+        future_df = pd.DataFrame({"ds": future_dates})
+
+        forecast = model.predict(future_df)
         client_id = related_datasets[0].get("client_id") if related_datasets else sensor_id
 
         forecast_points = []
@@ -139,3 +168,44 @@ async def get_forecast(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao gerar forecast: {str(error)}",
         )
+
+
+@router.get("/v1/forecasts/latest/{sensor_id}", response_model=LatestForecastResponse)
+async def get_latest_sensor_forecast(
+    sensor_id: str,
+    metric_name: Optional[str] = None,
+    token: str = Depends(verify_token),
+):
+    requested_metric = metric_name or "voltage"
+    latest = get_latest_forecast(sensor_id, metric_name=requested_metric)
+    if not latest:
+        # Fallback: generate one forecast now so the first request does not fail with 404.
+        await get_forecast(
+            sensor_id=sensor_id,
+            periods=24,
+            metric_name=requested_metric,
+            model_id="model_prophet_v1",
+            token=token,
+        )
+        latest = get_latest_forecast(sensor_id, metric_name=requested_metric)
+
+    if not latest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Nenhum forecast disponível para sensor={sensor_id} "
+                f"com metric_name={requested_metric}."
+            ),
+        )
+
+    return LatestForecastResponse(
+        forecast_id=latest.get("forecast_id", ""),
+        sensor_id=latest.get("sensor_id", sensor_id),
+        client_id=latest.get("client_id"),
+        metric_name=latest.get("metric_name", requested_metric),
+        model_id=latest.get("model_id", "model_prophet_v1"),
+        periods=int(latest.get("periods", 0)),
+        last_training=latest.get("last_training"),
+        requested_at=latest.get("requested_at"),
+        forecasts=[ForecastPoint(**point) for point in latest.get("forecasts", [])],
+    )

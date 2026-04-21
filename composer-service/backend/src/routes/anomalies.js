@@ -4,8 +4,11 @@ import {
   listAnomalies,
   getAnomaly,
   getSummary,
+  getBySensorSummary,
   getModelConfig,
   updateModelConfig,
+  getLatestForecast,
+  triggerSensorAnalysis,
   simulateAnomalyNotification,
   exportAnomalies,
   getSensorProcessingState,
@@ -18,6 +21,7 @@ router.use(requireAuth)
 
 // Summary stats (used by dashboard)
 router.get('/summary', getSummary)
+router.get('/by-sensor', getBySensorSummary)
 
 // Model config — read for any user, write for admin
 router.get('/model-config', getModelConfig)
@@ -27,7 +31,11 @@ router.put('/model-config', requireRole('admin'), updateModelConfig)
 router.get('/models', listModels)
 
 // Forecasts per sensor
+router.get('/forecasts/latest/:sensorId', getLatestForecast)
 router.get('/forecasts/:sensorId', getForecast)
+
+// Trigger sensor analysis (reprocess latest measurement for sensor)
+router.post('/analysis/:sensorId', triggerSensorAnalysis)
 
 // Last measurement_processed state per sensor (fed by webhook)
 router.get('/processing-state/:sensorId', getSensorProcessingState)

@@ -11,7 +11,7 @@ from .state import (
     db_webhooks,
     db_datasets,
     db_model_config,
-    db_trained_models,
+    save_trained_model,
     save_anomaly,
     update_dataset,
 )
@@ -293,7 +293,7 @@ async def _analyze_measurement_with_prophet(
         )
         model.fit(train_df)
 
-        db_trained_models[f"{source_id}:{metric_name}"] = model
+        save_trained_model(source_id, metric_name, model)
 
         forecast = model.predict(validation_df[["ds"]])
         anomalies_detected = 0
@@ -311,6 +311,7 @@ async def _analyze_measurement_with_prophet(
                 "measurement_id": measurement_id,
                 "source_id": source_id,
                 "client_id": client_id,
+                "metric_name": metric_name,
                 "timestamp": row["ds"].isoformat(),
                 "trigger_metrics": {
                     metric_name: actual_value,

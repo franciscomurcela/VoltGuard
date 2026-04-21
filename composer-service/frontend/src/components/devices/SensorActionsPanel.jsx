@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { sensorActionsApi, firmwaresApi } from '../../services/api'
+import { sensorActionsApi, firmwaresApi, anomaliesApi, measurementsApi } from '../../services/api'
 import useSensorAnomalyStats from '../../hooks/useSensorAnomalyStats'
 import useForecasts from '../../hooks/useForecasts'
 
@@ -60,6 +60,62 @@ function ActionBtn({ label, sub, color, onClick, loading, disabled }) {
     </button>
   )
 }
+
+const DATASET_SOURCES = {
+  uci: {
+    source_url: 'https://archive.ics.uci.edu/static/public/235/individual+household+electric+power+consumption.zip',
+    buildPayload: (sourceId, metricName) => {
+      const valueByMetric = {
+        voltage: 'Voltage',
+        current: 'Global_intensity',
+        active_power: 'Global_active_power',
+        reactive_power: 'Global_reactive_power',
+      }
+
+      const valueColumn = valueByMetric[metricName]
+      if (!valueColumn) {
+        throw new Error('Selected metric is not available in UCI dataset. Use voltage/current/active_power/reactive_power.')
+      }
+
+      return {
+        source_url: DATASET_SOURCES.uci.source_url,
+        source_id: sourceId,
+        metric_name: metricName,
+        delimiter: ';',
+        date_column: 'Date',
+        time_column: 'Time',
+        value_column: valueColumn,
+      }
+    },
+  },
+  opsd: {
+    source_url: 'https://raw.githubusercontent.com/jenfly/opsd/master/opsd_germany_daily.csv',
+    buildPayload: (sourceId, metricName) => {
+      const valueByMetric = {
+        active_power: 'Consumption',
+        voltage: 'Consumption',
+      }
+
+      const valueColumn = valueByMetric[metricName]
+      if (!valueColumn) {
+        throw new Error('Selected metric is not available in OPSD dataset. Use active_power or voltage.')
+      }
+
+      return {
+        source_url: DATASET_SOURCES.opsd.source_url,
+        source_id: sourceId,
+        metric_name: metricName,
+        timestamp_column: 'Date',
+        value_column: valueColumn,
+      }
+    },
+  },
+}
+
+const DATASET_SOURCE_OPTIONS = [
+  { value: 'uci', label: 'UCI Household Electric Power Consumption' },
+  { value: 'opsd', label: 'OPSD Germany Daily' },
+]
 
 // ─── Firmware upload form ─────────────────────────────────────────────────────
 
@@ -208,11 +264,30 @@ function AnomalyStatsPanel({ sensorId }) {
       )}
 
       {!loading && !error && stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 }}>
           {[
-            { label: 'Measurements', value: stats.totalMeasurements, color: 'var(--accent-blue)' },
+            { label: 'Datasets', value: stats.totalDatasets ?? stats.totalMeasurements, color: 'var(--accent-blue)' },
+            { label: 'Measurements', value: stats.totalSamples ?? 0, color: 'var(--accent-blue)' },
             { label: 'Anomalies', value: stats.totalAnomalies, color: 'var(--accent-red)' },
-            { label: 'Anomaly Ratio', value: stats.ratio, color: 'var(--accent-yellow)' },
+            {
+              label: 'Dataset Ratio',
+              value: stats.ratio,
+              sub:
+                typeof stats.measurementsWithAnomaly === 'number' && typeof stats.totalDatasets === 'number'
+                  ? `${stats.measurementsWithAnomaly}/${stats.totalDatasets} datasets`
+                  : null,
+              color: 'var(--accent-yellow)',
+            },
+            { label: 'Dataset With Anomaly', value: stats.measurementsWithAnomaly ?? 0, color: 'var(--accent-orange)' },
+            {
+              label: 'Anom./Measurement',
+              value: stats.sampleRatio ?? '—',
+              sub:
+                typeof stats.totalAnomalies === 'number' && typeof stats.totalSamples === 'number'
+                  ? `${stats.totalAnomalies}/${stats.totalSamples} measurements`
+                  : null,
+              color: 'var(--accent-purple)',
+            },
             {
               label: 'Last Processing',
               value: stats.lastProcessing?.status ?? 'unknown',
@@ -250,20 +325,48 @@ function AnomalyStatsPanel({ sensorId }) {
 
 // ─── Forecast Panel (2.4) ─────────────────────────────────────────────────────
 
-const METRIC_OPTIONS = ['voltage', 'current', 'power_factor', 'active_power', 'reactive_power']
+const DEFAULT_METRIC_OPTIONS = ['voltage', 'current', 'power_factor', 'active_power', 'reactive_power']
 const PERIOD_OPTIONS = [6, 12, 24, 48, 72]
 
 function ForecastPanel({ sensorId }) {
-  const { forecast, loading, error, fetchForecast, clearForecast } = useForecasts()
+  const { forecast, source, loading, error, fetchLatestForecast, fetchForecastDetail, clearForecast } = useForecasts()
   const [open, setOpen] = useState(false)
   const [periods, setPeriods] = useState(24)
   const [metric, setMetric] = useState('voltage')
+  const [metricOptions, setMetricOptions] = useState(DEFAULT_METRIC_OPTIONS)
 
-  const handleFetch = () => fetchForecast(sensorId, { periods, metric_name: metric })
+  useEffect(() => {
+    let cancelled = false
+
+    const loadMetricOptions = async () => {
+      try {
+        const res = await measurementsApi.getBySensor(sensorId)
+        const data = res?.data
+        const measurements = data?.measurements ?? data?.items ?? (Array.isArray(data) ? data : [])
+        const available = [...new Set(measurements.map((item) => item?.metric_name).filter(Boolean))]
+        const nextOptions = available.length > 0 ? available : DEFAULT_METRIC_OPTIONS
+
+        if (!cancelled) {
+          setMetricOptions(nextOptions)
+          setMetric((current) => (nextOptions.includes(current) ? current : nextOptions[0]))
+        }
+      } catch {
+        if (!cancelled) {
+          setMetricOptions(DEFAULT_METRIC_OPTIONS)
+          setMetric((current) => (DEFAULT_METRIC_OPTIONS.includes(current) ? current : DEFAULT_METRIC_OPTIONS[0]))
+        }
+      }
+    }
+
+    loadMetricOptions()
+    return () => { cancelled = true }
+  }, [sensorId])
+
+  const handleFetchDetail = () => fetchForecastDetail(sensorId, { periods, metric_name: metric })
 
   const toggle = () => {
     if (open) { clearForecast(); setOpen(false) }
-    else { setOpen(true); fetchForecast(sensorId, { periods, metric_name: metric }) }
+    else { setOpen(true); fetchLatestForecast(sensorId, { metric_name: metric }) }
   }
 
   return (
@@ -301,7 +404,7 @@ function ForecastPanel({ sensorId }) {
                 onChange={(e) => setMetric(e.target.value)}
                 style={{ fontSize: 11 }}
               >
-                {METRIC_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+                {metricOptions.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <div>
@@ -316,7 +419,7 @@ function ForecastPanel({ sensorId }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button
-                onClick={handleFetch}
+                onClick={handleFetchDetail}
                 disabled={loading}
                 style={{
                   padding: '6px 14px', fontSize: 11, fontWeight: 500,
@@ -328,7 +431,7 @@ function ForecastPanel({ sensorId }) {
                   fontFamily: 'var(--font-mono)',
                 }}
               >
-                {loading ? 'Loading…' : '↻ Fetch'}
+                {loading ? 'Loading…' : '↻ Generate Detail'}
               </button>
             </div>
           </div>
@@ -350,7 +453,7 @@ function ForecastPanel({ sensorId }) {
           {!error && forecast && (
             <div>
               <div className="mono" style={{ fontSize: 10, color: 'var(--text-ghost)', marginBottom: 6 }}>
-                {forecast.metric_name} · model: {forecast.model_id} · trained: {forecast.last_training ? new Date(forecast.last_training).toLocaleDateString() : '—'}
+                {source === 'latest' ? 'latest persisted' : 'generated on demand'} · {forecast.metric_name} · model: {forecast.model_id} · trained: {forecast.last_training ? new Date(forecast.last_training).toLocaleDateString() : '—'}
               </div>
               <div style={{ overflowX: 'auto', maxHeight: 200, overflowY: 'auto' }}>
                 <table style={{ width: '100%', fontSize: 11 }}>
@@ -409,6 +512,9 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
   const [showUpload, setShowUpload]       = useState(false)
   const [actionLoading, setActionLoading] = useState(null)
   const [feedback, setFeedback]           = useState(null)
+  const [measurementMetric, setMeasurementMetric] = useState('voltage')
+  const [measurementFile, setMeasurementFile] = useState(null)
+  const [datasetSource, setDatasetSource] = useState('uci')
 
   const loadFirmwares = async () => {
     setLoadingFw(true)
@@ -429,6 +535,28 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
   const showMsg = (type, msg) => {
     setFeedback({ type, msg })
     setTimeout(() => setFeedback(null), 4000)
+  }
+
+  const triggerAnalysis = async () => {
+    await anomaliesApi.triggerAnalysis(device.id)
+  }
+
+  const importRemoteDataset = async (sourceKey) => {
+    const source = DATASET_SOURCES[sourceKey]
+    if (!source) throw new Error('Unknown dataset source.')
+    const payload = source.buildPayload(device.id, measurementMetric)
+    await measurementsApi.importFromUrl(payload)
+  }
+
+  const ingestCsvDataset = async () => {
+    if (!measurementFile) {
+      throw new Error('Select a CSV file first.')
+    }
+    const form = new FormData()
+    form.append('file', measurementFile)
+    form.append('source_id', device.id)
+    form.append('metric_name', measurementMetric)
+    await measurementsApi.ingestCsv(form)
   }
 
   const dispatch = async (key, fn, successMsg) => {
@@ -529,6 +657,73 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
               disabled={busy && actionLoading !== 'reboot'}
               onClick={() => dispatch('reboot', () => sensorActionsApi.reboot(device.id), 'Reboot scheduled — will execute on next keepalive.')}
             />
+            <ActionBtn
+              label="Run Analysis"
+              sub="Reprocess latest measurements for this sensor"
+              color="var(--accent-purple)"
+              loading={actionLoading === 'analysis'}
+              disabled={busy && actionLoading !== 'analysis'}
+              onClick={() => dispatch('analysis', triggerAnalysis, 'Anomaly analysis started for latest sensor measurement set.')}
+            />
+            <div style={{
+              padding: '10px 14px',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(255,255,255,0.01)',
+              display: 'grid',
+              gap: 8,
+            }}>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--text-ghost)' }}>
+                Ingest CSV linked to this sensor
+              </div>
+              <select
+                value={measurementMetric}
+                onChange={(e) => setMeasurementMetric(e.target.value)}
+                disabled={busy}
+                style={{ width: '100%', fontSize: 12 }}
+              >
+                {DEFAULT_METRIC_OPTIONS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setMeasurementFile(e.target.files?.[0] || null)}
+                disabled={busy}
+                style={{ fontSize: 11 }}
+              />
+              <ActionBtn
+                label="Ingest CSV Dataset"
+                sub={measurementFile ? measurementFile.name : 'CSV with timestamp,value columns'}
+                color="var(--accent-blue)"
+                loading={actionLoading === 'ingest-csv'}
+                disabled={(busy && actionLoading !== 'ingest-csv') || !measurementFile}
+                onClick={() => dispatch('ingest-csv', ingestCsvDataset, 'CSV dataset ingested for this sensor.')}
+              />
+              <select
+                value={datasetSource}
+                onChange={(e) => setDatasetSource(e.target.value)}
+                disabled={busy}
+                style={{ width: '100%', fontSize: 12 }}
+              >
+                {DATASET_SOURCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <ActionBtn
+                label="Import Remote Dataset"
+                sub="Imports selected source and keeps dataset queued for Run Analysis"
+                color="var(--accent-green)"
+                loading={actionLoading === 'import-remote'}
+                disabled={busy && actionLoading !== 'import-remote'}
+                onClick={() => dispatch(
+                  'import-remote',
+                  () => importRemoteDataset(datasetSource),
+                  'Remote dataset imported and queued. Click Run Analysis to process it.'
+                )}
+              />
+            </div>
             {hasAnomaly ? (
               <ActionBtn
                 label="Clear Anomaly"

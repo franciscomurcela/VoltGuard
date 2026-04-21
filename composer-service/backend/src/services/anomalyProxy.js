@@ -44,6 +44,26 @@ export async function getAnomalies(req, params = {}) {
 }
 
 /**
+ * GET /v1/anomalies/by-sensor — aggregate stats by source_id
+ */
+export async function getAnomaliesBySensor(req, params = {}) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', '/v1/anomalies/by-sensor')
+      const res = await client.get(url, {
+        headers: anomalyHeaders(req),
+        params: {
+          source_id: params.sourceId || undefined,
+          client_id: params.clientId || undefined,
+        },
+      })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
  * GET /v1/anomalies/:id — single anomaly detail
  */
 export async function getAnomalyById(req, anomalyId) {
@@ -77,7 +97,10 @@ export async function getAnomalySummary(req) {
  */
 export async function submitMeasurements(req, measurementData) {
   const url = getServiceUrl('anomaly', '/v1/measurements')
-  const res = await client.post(url, measurementData, { headers: anomalyHeaders(req) })
+  const res = await client.post(url, measurementData, {
+    headers: anomalyHeaders(req),
+    timeout: 120000,
+  })
   return res.data
 }
 
@@ -88,7 +111,11 @@ export async function submitMeasurements(req, measurementData) {
 export async function submitMeasurementsCsv(req, formData) {
   const url = getServiceUrl('anomaly', '/v1/measurements/csv')
   const headers = { ...anomalyHeaders(req), ...formData.getHeaders() }
-  const res = await client.post(url, formData, { headers, maxBodyLength: Infinity })
+  const res = await client.post(url, formData, {
+    headers,
+    maxBodyLength: Infinity,
+    timeout: 120000,
+  })
   return res.data
 }
 
@@ -97,7 +124,10 @@ export async function submitMeasurementsCsv(req, formData) {
  */
 export async function importMeasurements(req, body) {
   const url = getServiceUrl('anomaly', '/v1/measurements/import')
-  const res = await client.post(url, body, { headers: anomalyHeaders(req) })
+  const res = await client.post(url, body, {
+    headers: anomalyHeaders(req),
+    timeout: 120000,
+  })
   return res.data
 }
 
@@ -125,6 +155,20 @@ export async function getMeasurementById(req, measurementId) {
   return withRetry(
     async () => {
       const url = getServiceUrl('anomaly', `/v1/measurements/${measurementId}`)
+      const res = await client.get(url, { headers: anomalyHeaders(req) })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * GET /v1/measurements/{id}/full — includes raw points
+ */
+export async function getMeasurementFullById(req, measurementId) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', `/v1/measurements/${measurementId}/full`)
       const res = await client.get(url, { headers: anomalyHeaders(req) })
       return res.data
     },
@@ -178,6 +222,7 @@ export async function getForecast(req, sensorId, params = {}) {
       const url = getServiceUrl('anomaly', `/v1/forecasts/${sensorId}`)
       const res = await client.get(url, {
         headers: anomalyHeaders(req),
+        timeout: 120000,
         params: {
           periods:     params.periods     || 24,
           metric_name: params.metricName  || 'voltage',
@@ -188,6 +233,40 @@ export async function getForecast(req, sensorId, params = {}) {
     },
     { label: LABEL },
   )
+}
+
+/**
+ * GET /v1/forecasts/latest/{sensorId} — latest persisted forecast
+ */
+export async function getLatestForecast(req, sensorId, params = {}) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl('anomaly', `/v1/forecasts/latest/${sensorId}`)
+      const res = await client.get(url, {
+        headers: anomalyHeaders(req),
+        params: {
+          metric_name: params.metricName || undefined,
+        },
+      })
+      return res.data
+    },
+    { label: LABEL },
+  )
+}
+
+/**
+ * POST /v1/measurements/reprocess/{source_id} — trigger analysis rerun
+ */
+export async function reprocessSensorMeasurements(req, sensorId, params = {}) {
+  const url = getServiceUrl('anomaly', `/v1/measurements/reprocess/${sensorId}`)
+  const res = await client.post(url, null, {
+    headers: anomalyHeaders(req),
+    timeout: 120000,
+    params: {
+      metric_name: params.metricName || undefined,
+    },
+  })
+  return res.data
 }
 
 // The anomaly service currently ships a single model. The ID is the path

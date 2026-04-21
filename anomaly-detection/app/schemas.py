@@ -11,6 +11,7 @@ class AnomalySummary(APIBaseModel):
     measurement_id: str
     source_id: str
     client_id: Optional[str] = None
+    metric_name: Optional[str] = None
     timestamp: str
     severity: str
     model_id: Optional[str] = None
@@ -21,6 +22,7 @@ class AnomalyDetail(APIBaseModel):
     measurement_id: str
     source_id: str
     client_id: Optional[str] = None
+    metric_name: Optional[str] = None
     timestamp: str
     trigger_metrics: Dict[str, Any]
     detection_method: str
@@ -58,6 +60,36 @@ class ForecastResponse(APIBaseModel):
     forecasts: List[ForecastPoint] = Field(..., min_items=1, description="Forecast points")
     last_training: Optional[str] = Field(None, description="When the model was last trained")
     periods: int = Field(..., description="Number of periods forecasted")
+
+
+class LatestForecastResponse(APIBaseModel):
+    forecast_id: str
+    sensor_id: str
+    client_id: Optional[str] = None
+    metric_name: str
+    model_id: str
+    periods: int
+    last_training: Optional[str] = None
+    requested_at: Optional[str] = None
+    forecasts: List[ForecastPoint] = Field(default_factory=list)
+
+
+class SensorAnomalyAggregate(APIBaseModel):
+    source_id: str
+    client_id: Optional[str] = None
+    measurements_total: int
+    measurements_with_anomaly: int
+    anomalies_total: int
+    measurement_anomaly_rate: float
+    anomalies_per_measurement: float
+    latest_anomaly_id: Optional[str] = None
+    latest_anomaly_timestamp: Optional[str] = None
+    latest_severity: Optional[str] = None
+
+
+class SensorAnomalyAggregateResponse(APIBaseModel):
+    items: List[SensorAnomalyAggregate]
+    total_sensors: int
 
 
 class WebhookSubscription(APIBaseModel):
@@ -164,6 +196,7 @@ class DatasetInfo(APIBaseModel):
     period_start: str
     period_end: str
     config: Optional[Dict[str, Any]] = None
+    points: Optional[List[DatasetPoint]] = None
     training_status: str
     last_trained: Optional[str] = None
 

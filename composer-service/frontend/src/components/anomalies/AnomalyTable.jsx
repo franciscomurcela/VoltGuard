@@ -15,7 +15,7 @@ function timeAgo(timestamp) {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-export default function AnomalyTable({ anomalies = [], onSelect }) {
+export default function AnomalyTable({ anomalies = [], onSelect, deviceMap = new Map() }) {
   const items = anomalies.items || anomalies
 
   if (!items.length) {
@@ -39,6 +39,7 @@ export default function AnomalyTable({ anomalies = [], onSelect }) {
         <tbody>
           {items.map((anomaly, i) => {
             const sev = SEVERITY_COLORS[anomaly.severity] || SEVERITY_COLORS.medium
+            const device = deviceMap.get(anomaly.source_id)
             return (
               <tr
                 key={anomaly.anomaly_id}
@@ -70,9 +71,12 @@ export default function AnomalyTable({ anomalies = [], onSelect }) {
                   </span>
                 </td>
                 <td>
-                  <span className="mono" style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500 }}>
+                  <div className="mono" style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }}>
                     {anomaly.source_id}
-                  </span>
+                  </div>
+                  <div className="mono" style={{ color: device ? 'var(--text-ghost)' : 'var(--accent-orange)', fontSize: 10 }}>
+                    {device ? device.name : 'unlinked source'}
+                  </div>
                 </td>
                 <td>
                   <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
