@@ -12,6 +12,10 @@
 .env.local
 .env.*.local
 
+# Local docker-compose override (dev-only host port exposures)
+docker-compose.override.yaml
+docker-compose.override.yml
+
 # Firmware binary storage (large binary files)
 **/firmware_storage/
 
