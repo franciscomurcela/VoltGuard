@@ -79,7 +79,7 @@ app.use(
     swaggerOptions: {
       urls: [
         { name: 'Composer API',  url: '/api-docs/openapi.yaml' },
-        { name: 'OAM Service',   url: 'http://localhost:8084/api-docs/openapi.json' },
+        { name: 'OAM Service',   url: 'http://oam.voltguard.pt/api-docs/openapi.json' },
       ],
       'urls.primaryName': 'Composer API',
       docExpansion: 'list',

@@ -1,0 +1,85 @@
+_format_version: "2.1"
+_transform: true
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # COMPOSER — Backend API
+  # composer.voltguard.pt/api/* → compositor-backend:8080
+  #
+  # strip_path: false is required because the backend registers all routes under
+  # /api/... (e.g. app.use('/api/devices', ...)).  If Kong stripped the prefix,
+  # the backend would receive /devices and return 404 on every request.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: composer-backend
+    url: http://compositor-backend:8080
+    routes:
+      - name: composer-api
+        hosts:
+          - composer.voltguard.pt
+        paths:
+          - /api
+        strip_path: false
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # COMPOSER — Frontend (React SPA)
+  # composer.voltguard.pt/* → compositor-frontend:80
+  #
+  # Catch-all for the same host — Kong prefers the more specific /api route
+  # above automatically, so this only receives non-API traffic.
+  # strip_path: false ensures React Router receives the full path.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: composer-frontend
+    url: http://compositor-frontend:80
+    routes:
+      - name: composer-ui
+        hosts:
+          - composer.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OAM SERVICE
+  # oam.voltguard.pt/* → oam-service:8080
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: oam-service
+    url: http://oam-service:8080
+    routes:
+      - name: oam
+        hosts:
+          - oam.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # NOTIFICATIONS SERVICE
+  # notifications.voltguard.pt/* → notifications-service:8083
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: notifications-service
+    url: http://notifications-service:8083
+    routes:
+      - name: notifications
+        hosts:
+          - notifications.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # ANOMALY DETECTION API
+  # anomaly.voltguard.pt/* → anomaly-api:8085
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: anomaly-api
+    url: http://anomaly-api:8085
+    routes:
+      - name: anomaly
+        hosts:
+          - anomaly.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # KEYCLOAK — Auth
+  # auth.voltguard.pt/* → keycloak:8080
+  #
+  # Routing Keycloak through Kong so the frontend can reach it from the same
+  # network context (auth.voltguard.pt), avoiding cross-origin CORS issues
+  # when the JS adapter fetches OIDC endpoints.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: keycloak
+    url: http://keycloak:8080
+    routes:
+      - name: auth
+        hosts:
+          - auth.voltguard.pt

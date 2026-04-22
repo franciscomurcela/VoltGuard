@@ -14,13 +14,11 @@ import Preferences from './pages/Preferences'
 function ProtectedRoute({ children }) {
   const { initialized, authenticated } = useAuth()
 
-  if (!initialized) {
-    return <Login />
-  }
+  // Auth is disabled system-wide (AUTH_DISABLED=true on backend too) — let through
+  if (import.meta.env.VITE_AUTH_DISABLED === 'true') return children
 
-  if (!authenticated) {
-    return <Login />
-  }
+  if (!initialized) return <Login />
+  if (!authenticated) return <Login />
 
   return children
 }

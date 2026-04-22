@@ -1,19 +1,21 @@
-import { useKeycloak } from '@react-keycloak/web'
 import { useEffect, useMemo } from 'react'
+import { useKeycloakContext } from '../contexts/KeycloakContext'
 import { setTokenGetter } from '../services/api'
 
-export default function useAuth() {
-  const { keycloak, initialized } = useKeycloak()
+const AUTH_DISABLED = import.meta.env.VITE_AUTH_DISABLED === 'true'
 
-  // Wire the token into the API layer whenever it changes
+// ─── Real auth — keycloak-js used directly via KeycloakContext ───────────────
+function useRealAuth() {
+  const { initialized, authenticated, keycloak } = useKeycloakContext()
+
   useEffect(() => {
-    if (keycloak?.authenticated) {
+    if (authenticated && keycloak?.token) {
       setTokenGetter(() => keycloak.token)
     }
-  }, [keycloak?.token, keycloak?.authenticated])
+  }, [keycloak?.token, authenticated])
 
   const user = useMemo(() => {
-    if (!keycloak?.authenticated || !keycloak.tokenParsed) return null
+    if (!authenticated || !keycloak?.tokenParsed) return null
 
     const tp = keycloak.tokenParsed
     const realmRoles = tp.realm_access?.roles || []
@@ -27,15 +29,32 @@ export default function useAuth() {
       roles: [...realmRoles, ...clientRoles],
       isAdmin: realmRoles.includes('admin') || clientRoles.includes('admin'),
     }
-  }, [keycloak?.tokenParsed, keycloak?.authenticated])
+  }, [keycloak?.tokenParsed, authenticated])
 
   return {
     initialized,
-    authenticated: keycloak?.authenticated || false,
+    authenticated,
     user,
     token: keycloak?.token,
-    login: () => keycloak?.login(),
-    logout: () => keycloak?.logout({ redirectUri: window.location.origin }),
+    login:   () => keycloak?.login(),
+    logout:  () => keycloak?.logout({ redirectUri: window.location.origin }),
     hasRole: (role) => user?.roles.includes(role) || false,
   }
 }
+
+// ─── Mock auth — no Keycloak provider in the tree (AUTH_DISABLED=true) ───────
+function useMockAuth() {
+  return {
+    initialized: true,
+    authenticated: false,
+    user: null,
+    token: null,
+    login:   () => {},
+    logout:  () => {},
+    hasRole: () => false,
+  }
+}
+
+// AUTH_DISABLED is a build-time constant — the exported hook is always the same
+// function reference, so React's rules of hooks are satisfied.
+export default AUTH_DISABLED ? useMockAuth : useRealAuth

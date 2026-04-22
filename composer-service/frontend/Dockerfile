@@ -3,6 +3,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
+ARG VITE_KEYCLOAK_URL=http://localhost:8081
+ARG VITE_AUTH_DISABLED=false
+ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL
+ENV VITE_AUTH_DISABLED=$VITE_AUTH_DISABLED
 RUN npm run build
 
 FROM nginx:alpine AS runtime
@@ -13,15 +17,6 @@ RUN echo 'server { \
     listen 80; \
     root /usr/share/nginx/html; \
     index index.html; \
-    resolver 127.0.0.11 valid=10s ipv6=off; \
-    location /api/ { \
-        set $backend http://compositor-backend:8080; \
-        proxy_pass $backend; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
-    } \
     location / { \
         try_files $uri $uri/ /index.html; \
     } \

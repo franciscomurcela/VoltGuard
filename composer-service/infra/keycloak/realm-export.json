@@ -2,7 +2,7 @@
   "realm": "iot-compositor",
   "enabled": true,
   "displayName": "IoT Compositor",
-  "sslRequired": "external",
+  "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -37,10 +37,12 @@
       "protocol": "openid-connect",
       "redirectUris": [
         "http://localhost:3000/*",
+        "http://composer.voltguard.pt/*",
         "https://compositor.example.com/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
+        "http://composer.voltguard.pt",
         "https://compositor.example.com"
       ],
       "defaultClientScopes": [

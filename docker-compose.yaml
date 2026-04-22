@@ -12,9 +12,10 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: http://localhost:8081
-      KC_HOSTNAME_ADMIN: http://localhost:8081
+      KC_HOSTNAME: https://auth.voltguard.pt
+      KC_HOSTNAME_ADMIN: https://auth.voltguard.pt
       KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
     ports:
       - "8081:8080"
       - "9000:9000"
@@ -58,7 +59,7 @@ services:
       RATE_LIMIT_WINDOW_MS: 60000
       RATE_LIMIT_MAX_REQUESTS: 200
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: https://composer.voltguard.pt
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
@@ -91,6 +92,9 @@ services:
     build:
       context: ./composer-service/frontend
       dockerfile: Dockerfile
+      args:
+        VITE_KEYCLOAK_URL: https://auth.voltguard.pt
+        VITE_AUTH_DISABLED: ${AUTH_DISABLED:-false}
       network: host
     container_name: voltguard-compositor-frontend
     ports:
@@ -206,7 +210,7 @@ services:
       DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
       SERVER_ADDR: 0.0.0.0:8080
       FIRMWARE_STORAGE_PATH: /app/firmware_storage
-      BASE_URL: ${OAM_BASE_URL:-http://localhost:8084}
+      BASE_URL: ${OAM_BASE_URL:-http://oam.voltguard.pt}
       RUST_LOG: ${LOG_LEVEL:-info}
     volumes:
       - oam-firmware-storage:/app/firmware_storage
@@ -274,6 +278,45 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # KONG — API Gateway
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  kong:
+    image: kong:3.7
+    container_name: voltguard-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_SSL_CERT: /etc/kong/certs/cert.pem
+      KONG_SSL_CERT_KEY: /etc/kong/certs/key.pem
+      KONG_LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "80:8000"    # public gateway — HTTP (kept for health checks)
+      - "443:8443"   # public gateway — HTTPS (required for Keycloak PKCE)
+      - "8001:8001"  # Kong admin API (debug only — remove in production)
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+      - ./kong/certs:/etc/kong/certs:ro
+    depends_on:
+      - compositor-frontend
+      - compositor-backend
+      - oam-service
+      - notifications-service
+      - anomaly-api
+      - keycloak
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/status"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     restart: unless-stopped
 
 # ═══════════════════════════════════════════════════════════════════════════
