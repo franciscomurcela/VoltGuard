@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -78,11 +79,20 @@ class Sensor:
     last_reading: Optional[dict] = None
     is_anomalous: bool = False
 
-    def generate_reading(self, inject_anomaly: bool = False) -> tuple:
-        """Generate a realistic sensor reading, optionally with anomaly."""
+    def generate_reading(self, inject_anomaly: bool = False, pattern: Optional[dict] = None, intensity: float = 1.0) -> tuple:
+        """Generate a realistic sensor reading, optionally with anomaly.
+
+        When inject_anomaly=True and pattern is provided, force that specific pattern
+        (used by deterministic demo scheduler). Otherwise pick a random one. The intensity
+        multiplier scales the spike magnitude — values above 1.0 push the reading further
+        outside Prophet's confidence interval so detection is more reliable.
+        """
         timestamp = datetime.now(timezone.utc).isoformat()
         values = {}
-        pattern = random.choice(ANOMALY_PATTERNS) if inject_anomaly else None
+        if inject_anomaly and pattern is None:
+            pattern = random.choice(ANOMALY_PATTERNS)
+        elif not inject_anomaly:
+            pattern = None
 
         for metric_name in self.metrics:
             profile = SENSOR_PROFILES[metric_name]
@@ -92,8 +102,9 @@ class Sensor:
             value = base + random.gauss(0, noise)
 
             if inject_anomaly and pattern and metric_name in pattern["metrics"]:
-                spike = profile["anomaly_spike"]
-                value = base + spike + random.gauss(0, abs(noise) * 2) if spike > 0 else base + spike + random.gauss(0, abs(noise))
+                spike = profile["anomaly_spike"] * intensity
+                extra_noise = random.gauss(0, abs(noise) * (2 if intensity >= 1.0 else 1))
+                value = base + spike + extra_noise
 
             values[metric_name] = round(value, 3)
 
@@ -256,6 +267,17 @@ class Simulator:
         # Accumulates points until MIN_DATASET_POINTS is reached before submitting
         self._buffer: dict = {}
 
+        # Deterministic injection scheduler (active when args.inject_every is set).
+        # cycles_since_last_inject counts cycles since the last injection *started*;
+        # pending_injection tracks an in-flight injection that spans --anomaly-window cycles
+        # so the spike lands on the last N points of the 8-point flush buffer.
+        self._cycles_since_last_inject: int = 0
+        self._pending_injection: Optional[dict] = None
+        self._pattern_cursor: int = 0
+        self._target_cursor: int = 0
+        # Sensor ids submitted with injected anomalies — used by post-flush poll
+        self._injected_measurements: set = set()
+
         # Stats
         self.total_readings = 0
         self.total_anomalies_injected = 0
@@ -281,8 +303,14 @@ class Simulator:
             {"timestamp": timestamp, "value": value}
         )
 
-    async def _flush_ready(self) -> list:
-        """Submit all sensor/metric series that have reached MIN_DATASET_POINTS. Returns measurement IDs."""
+    async def _flush_ready(self, injected_sensor_ids: Optional[set] = None) -> list:
+        """Submit all sensor/metric series that have reached MIN_DATASET_POINTS. Returns measurement IDs.
+
+        injected_sensor_ids: sensors that produced anomalous points this cycle; when one of their
+        series flushes, the returned measurement_id is remembered so the post-flush detection poll
+        can attribute it to an injection.
+        """
+        injected = injected_sensor_ids or set()
         ids = []
         for source_id, metrics in list(self._buffer.items()):
             for metric_name, points in list(metrics.items()):
@@ -291,9 +319,23 @@ class Simulator:
                 mid = await self._submit_dataset(source_id, metric_name, points)
                 if mid:
                     ids.append(mid)
+                    if source_id in injected:
+                        self._injected_measurements.add(mid)
                 # Reset buffer for this series after submission
                 self._buffer[source_id][metric_name] = []
         return ids
+
+    async def _confirm_detections(self, measurement_ids: list):
+        """Poll each measurement once to check how many anomalies the service reported. Runs in background."""
+        for mid in measurement_ids:
+            data = await self.check_measurement_status(mid)
+            if not data:
+                continue
+            status = str(data.get("status", ""))
+            # Status format from anomaly service: "analyzed (N anomalias)" — extract N
+            match = re.search(r"\((\d+)\s+anomalias?\)", status)
+            if match:
+                self.total_anomalies_detected += int(match.group(1))
 
     async def _submit_dataset(self, source_id: str, metric_name: str, points: list) -> Optional[str]:
         try:
@@ -368,15 +410,110 @@ class Simulator:
         except Exception as e:
             self.log(f"[yellow]⚠ Keepalive error {sensor.sensor_id[:8]}...: {e}[/yellow]")
 
+    def _pick_target_sensor(self) -> Optional[Sensor]:
+        """Resolve --target-sensor (prefix match on uuid or name), else round-robin."""
+        selector = self.args.target_sensor
+        if selector:
+            matches = [
+                s for s in self.sensors
+                if s.sensor_id.startswith(selector) or selector.lower() in s.name.lower()
+            ]
+            if not matches:
+                self.log(f"[yellow]⚠ --target-sensor '{selector}' matched no sensors; falling back to round-robin[/yellow]")
+            else:
+                sensor = matches[self._target_cursor % len(matches)]
+                self._target_cursor += 1
+                return sensor
+        if not self.sensors:
+            return None
+        sensor = self.sensors[self._target_cursor % len(self.sensors)]
+        self._target_cursor += 1
+        return sensor
+
+    def _pick_pattern(self, sensor: Sensor) -> Optional[dict]:
+        """Resolve --pattern, else round-robin through ANOMALY_PATTERNS. Patterns whose
+        metrics don't overlap the sensor's metrics are skipped so the spike actually lands."""
+        name = self.args.pattern
+        if name:
+            for p in ANOMALY_PATTERNS:
+                if p["name"] == name:
+                    return p
+            self.log(f"[yellow]⚠ --pattern '{name}' not found; falling back to round-robin[/yellow]")
+
+        compatible = [p for p in ANOMALY_PATTERNS if any(m in sensor.metrics for m in p["metrics"])]
+        if not compatible:
+            return None
+        pattern = compatible[self._pattern_cursor % len(compatible)]
+        self._pattern_cursor += 1
+        return pattern
+
+    def _maybe_schedule_injection(self):
+        """Start a new injection when --inject-every cycles have passed and none is in flight."""
+        if self._pending_injection is not None:
+            return
+        if not self.args.inject_every or self.args.inject_every <= 0:
+            return
+        if self._cycles_since_last_inject < self.args.inject_every:
+            return
+
+        sensor = self._pick_target_sensor()
+        if sensor is None:
+            return
+        pattern = self._pick_pattern(sensor)
+        if pattern is None:
+            self.log(f"[yellow]⚠ No compatible pattern for sensor {sensor.name} (metrics={sensor.metrics})[/yellow]")
+            return
+
+        self._pending_injection = {
+            "sensor_id": sensor.sensor_id,
+            "sensor_name": sensor.name,
+            "district": sensor.district,
+            "pattern": pattern,
+            "remaining_points": max(1, self.args.anomaly_window),
+        }
+        self._cycles_since_last_inject = 0
+
+        short_id = sensor.sensor_id[:8]
+        intensity = self.args.intensity
+        window = self.args.anomaly_window
+        self.log(
+            f"[bold white on red]🔥 INJECTING {pattern['name']}[/bold white on red] on "
+            f"[bold]{sensor.name}[/bold] ({short_id}...) in {sensor.district} | "
+            f"intensity={intensity}x | window={window} pts"
+        )
+        self.log(f"   [dim]→ expect anomaly in composer UI within ~{window * self.args.interval + 5:.0f}s[/dim]")
+
     async def run_cycle(self, cycle: int):
-        batch = []
         anomalous_sensors = []
+        deterministic = bool(self.args.inject_every and self.args.inject_every > 0)
+
+        if deterministic:
+            self._cycles_since_last_inject += 1
+            self._maybe_schedule_injection()
+            cycles_to_next = max(0, self.args.inject_every - self._cycles_since_last_inject)
+            next_hint = f" | next injection in {cycles_to_next} cycle{'s' if cycles_to_next != 1 else ''}" if self._pending_injection is None else " | injection in flight"
+        else:
+            next_hint = ""
 
         keepalive_tasks = []
-        measurement_tasks = []
         for sensor in self.sensors:
-            inject = random.random() < self.args.anomaly_chance
-            reading, pattern = sensor.generate_reading(inject_anomaly=inject)
+            if deterministic:
+                inject = (
+                    self._pending_injection is not None
+                    and self._pending_injection["sensor_id"] == sensor.sensor_id
+                )
+                forced_pattern = self._pending_injection["pattern"] if inject else None
+                intensity = self.args.intensity if inject else 1.0
+            else:
+                inject = random.random() < self.args.anomaly_chance
+                forced_pattern = None
+                intensity = 1.0
+
+            reading, pattern = sensor.generate_reading(
+                inject_anomaly=inject,
+                pattern=forced_pattern,
+                intensity=intensity,
+            )
             self.total_readings += 1
 
             if inject:
@@ -390,11 +527,18 @@ class Simulator:
             for metric_name, value in reading["metrics"].items():
                 self._buffer_point(sensor.sensor_id, metric_name, ts, value)
 
+        # Decrement pending injection window AFTER all sensors processed this cycle
+        if deterministic and self._pending_injection is not None:
+            self._pending_injection["remaining_points"] -= 1
+            if self._pending_injection["remaining_points"] <= 0:
+                self._pending_injection = None
+
         # Send keepalives concurrently
         await asyncio.gather(*keepalive_tasks, return_exceptions=True)
 
         # Flush series that have accumulated enough points
-        measurement_ids = await self._flush_ready()
+        injected_sensor_ids = {s.sensor_id for s, _ in anomalous_sensors}
+        measurement_ids = await self._flush_ready(injected_sensor_ids=injected_sensor_ids)
 
         anomaly_count = len(anomalous_sensors)
         districts_hit = set(s.district for s, _ in anomalous_sensors)
@@ -403,12 +547,16 @@ class Simulator:
         color = "red" if anomaly_count else "dim"
         buffered = sum(len(pts) for metrics in self._buffer.values() for pts in metrics.values())
         self.log(
-            f"[green]▶ Cycle {cycle}[/green] | "
+            f"[green]▶ Cycle {cycle}[/green]{next_hint} | "
             f"{len(self.sensors)} sensors · {len(measurement_ids)} datasets submitted · {buffered} pts buffered | "
             f"[{color}]{anomaly_count} anomalies{district_str}[/{color}]"
         )
 
-        # (no polling needed — anomaly service responds inline)
+        # Poll any measurement IDs flagged as injected to update detected count
+        if self._injected_measurements:
+            pending = list(self._injected_measurements)
+            self._injected_measurements.clear()
+            asyncio.create_task(self._confirm_detections(pending))
 
         # Notifications
         if anomalous_sensors and self.args.notify:
@@ -462,14 +610,25 @@ class Simulator:
 
     async def run(self):
         self.log(f"[bold green]🚀 VoltGuard Sensor Simulator[/bold green]")
+        if self.args.inject_every and self.args.inject_every > 0:
+            mode_line = (
+                f"Mode: [bold red]demo[/bold red] · "
+                f"inject-every {self.args.inject_every} cycles · "
+                f"intensity {self.args.intensity}x · window {self.args.anomaly_window} pts"
+            )
+            if self.args.target_sensor:
+                mode_line += f" · target '{self.args.target_sensor}'"
+            if self.args.pattern:
+                mode_line += f" · pattern {self.args.pattern}"
+        else:
+            mode_line = f"Mode: random · anomaly chance {self.args.anomaly_chance * 100:.0f}%"
+
         self.log(
             f"   OAM:           {self.args.oam_url}\n"
             f"   Anomaly:       {self.args.anomaly_url}\n"
             f"   Notification:  {self.args.notification_url}\n"
-            f"   Sensors: {len(self.sensors)} | "
-            f"Interval: {self.args.interval}s | "
-            f"Anomaly chance: {self.args.anomaly_chance * 100:.0f}% | "
-            f"Notify: {'ON' if self.args.notify else 'OFF'}"
+            f"   Sensors: {len(self.sensors)} | Interval: {self.args.interval}s | Notify: {'ON' if self.args.notify else 'OFF'}\n"
+            f"   {mode_line}"
         )
         self.print_fleet()
 
@@ -502,11 +661,17 @@ Examples:
   python simulator.py --generate-config
   python simulator.py --generate-config --extra-sensors 20
 
-  # Run with config
+  # Random load mode (default)
   python simulator.py                                    # uses sensors.json
   python simulator.py --config my-fleet.json             # custom file
   python simulator.py --interval 5 --anomaly-chance 0.2  # faster + more anomalies
   python simulator.py --notify                           # enable notifications
+
+  # Demo mode — deterministic, presenter-friendly
+  python simulator.py --demo-mode                                        # scheduled injections, fast cycles
+  python simulator.py --demo-mode --target-sensor Lisboa                 # only injects on Lisboa sensors
+  python simulator.py --demo-mode --pattern voltage_spike --intensity 3  # force a specific loud anomaly
+  python simulator.py --inject-every 4 --intensity 2.0                   # manual demo tuning
         """,
     )
 
@@ -519,8 +684,16 @@ Examples:
     parser.add_argument("--interval", type=float, default=10.0, help="Seconds between cycles (default: 10)")
     parser.add_argument("--batch-size", type=int, default=100, help="Max measurements per API call (default: 100)")
 
-    # Anomalies
-    parser.add_argument("--anomaly-chance", type=float, default=0.1, help="Anomaly probability per sensor per cycle, 0.0-1.0 (default: 0.1)")
+    # Anomalies — random load mode
+    parser.add_argument("--anomaly-chance", type=float, default=0.1, help="Random anomaly probability per sensor per cycle, 0.0-1.0 (default: 0.1). Ignored when --inject-every is set.")
+
+    # Anomalies — deterministic demo mode
+    parser.add_argument("--demo-mode", action="store_true", help="Presenter-friendly defaults: faster cycles, scheduled injections, higher intensity. See epilog.")
+    parser.add_argument("--inject-every", type=int, default=0, help="Inject a guaranteed anomaly every N cycles (0 = disabled; use random --anomaly-chance instead)")
+    parser.add_argument("--target-sensor", type=str, default=None, help="Restrict injection to sensors whose UUID starts with, or name contains, this string")
+    parser.add_argument("--pattern", type=str, default=None, choices=[p["name"] for p in ANOMALY_PATTERNS], help="Force a specific anomaly pattern")
+    parser.add_argument("--intensity", type=float, default=1.0, help="Multiplier for anomaly spike magnitude (default 1.0, demo default 2.0)")
+    parser.add_argument("--anomaly-window", type=int, default=2, help="How many of the last buffered points carry the spike (default 2, hits Prophet's 80/20 validation split)")
 
     # Services
     parser.add_argument("--oam-url", type=str, default="http://localhost:8084", help="OAM service URL (default: http://localhost:8084)")
@@ -543,8 +716,32 @@ Examples:
     return parser.parse_args()
 
 
+def apply_demo_defaults(args, argv: list):
+    """Override timing/injection defaults when --demo-mode is set, unless the user passed them explicitly.
+
+    argv is the raw sys.argv list — checked so that user-provided flags always win over demo defaults.
+    """
+    def user_set(*flags):
+        return any(any(a == f or a.startswith(f + "=") for a in argv) for f in flags)
+
+    if not args.demo_mode:
+        return
+
+    if not user_set("--interval"):
+        args.interval = 5.0
+    if not user_set("--inject-every"):
+        args.inject_every = 4
+    if not user_set("--intensity"):
+        args.intensity = 2.0
+    if not user_set("--anomaly-window"):
+        args.anomaly_window = 2
+    if not user_set("--stats-every"):
+        args.stats_every = 3
+
+
 if __name__ == "__main__":
     args = parse_args()
+    apply_demo_defaults(args, sys.argv)
 
     # Generate config mode
     if args.generate_config:

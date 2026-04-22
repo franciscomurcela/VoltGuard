@@ -38,11 +38,13 @@
       "redirectUris": [
         "http://localhost:3000/*",
         "http://composer.voltguard.pt/*",
+        "https://composer.voltguard.pt/*",
         "https://compositor.example.com/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
         "http://composer.voltguard.pt",
+        "https://composer.voltguard.pt/*",
         "https://compositor.example.com"
       ],
       "defaultClientScopes": [
