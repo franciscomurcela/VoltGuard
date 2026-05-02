@@ -1,7 +1,9 @@
 import logging
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -19,6 +21,8 @@ STATUS_DELIVERED = 'DELIVERED'
 STATUS_FAILED = 'FAILED'
 STATUS_ABORTED_BY_PREFERENCE = 'ABORTED_BY_PREFERENCE'
 STATUS_QUEUED_FOR_DIGEST = 'QUEUED_FOR_DIGEST'
+PREFERENCES_HINT_PREFIX = 'Se pretende deixar de receber notificações ou alterar as suas preferências clique no link abaixo:'
+DEFAULT_PREFERENCES_LINK_BASE_URL = 'http://localhost:3000/preferences'
 
 
 def _normalize_status(value: str) -> str:
@@ -37,6 +41,47 @@ def _normalize_status(value: str) -> str:
 
 def _message_from_template(message_template: str, variables: dict) -> str:
     return message_template.format(**variables) if variables else message_template
+
+
+def _build_preferences_link(secret: str) -> str:
+    if not secret:
+        return ''
+
+    base_url = (os.environ.get('PREFERENCES_LINK_BASE_URL') or DEFAULT_PREFERENCES_LINK_BASE_URL).strip()
+    if not base_url:
+        return ''
+
+    parsed = urlsplit(base_url)
+    query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_params['secret'] = secret
+    query = urlencode(query_params)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
+
+
+def _is_first_notification_for_target(db, target: str) -> bool:
+    existing = db.notifications.find_one(
+        {
+            'target': target,
+            'status': {'$ne': STATUS_ABORTED_BY_PREFERENCE},
+        },
+        projection={'_id': 1},
+    )
+    return existing is None
+
+
+def _append_preferences_hint(message: str, preference: dict, is_first_for_target: bool) -> str:
+    if not is_first_for_target or not preference:
+        return message
+
+    secret = str(preference.get('secret') or '').strip()
+    if not secret:
+        return message
+
+    link = _build_preferences_link(secret)
+    if not link:
+        return message
+
+    return f'{message}\n\n{PREFERENCES_HINT_PREFIX} {link}'
 
 
 def _payload_hash(payload: dict) -> str:
@@ -185,6 +230,8 @@ def v1_notifications_post(body):  # noqa: E501
             existing_payload['idempotent_replay'] = True
             return existing_payload, 200
 
+    is_first_for_target = _is_first_notification_for_target(db, target)
+
     now = datetime.now(tz=timezone.utc)
     doc = {
         'client_id': client_id,
@@ -223,6 +270,7 @@ def v1_notifications_post(body):  # noqa: E501
     )
 
     preference = _find_user_preference(db, target)
+    message = _append_preferences_hint(message, preference, is_first_for_target)
     channel_type = _channel_kind(channel)
     if preference:
         channel_enabled = bool(preference.get('channels', {}).get(channel_type, True))

@@ -49,6 +49,12 @@ O serviço suporta seed de user_preferences para ambientes de desenvolvimento/te
 - Se a mesma chave for reenviada com o mesmo payload, devolve resposta idempotente (sem duplicar notificação).
 - Se a mesma chave for reenviada com payload diferente, devolve `409 conflict`.
 
+### Link de preferências na primeira mensagem
+- Na primeira notificação enviada para um `target`, o serviço acrescenta automaticamente o texto:
+  - `Se pretende deixar de receber notificações ou alterar as suas preferências clique no link abaixo: <link com secret>`
+- O link é gerado com base na variável `PREFERENCES_LINK_BASE_URL` e no `secret` encontrado em `user_preferences`.
+- Em notificações subsequentes para o mesmo `target`, esse texto não é repetido.
+
 ### Endpoints principais
 - POST /v1/notifications
 - GET /v1/notifications
@@ -98,6 +104,9 @@ Cada notificação gera eventos na coleção `notification_audit`, incluindo:
 - TWILIO_AUTH_TOKEN
 - TWILIO_FROM_PHONE
 - TWILIO_FROM_WHATSAPP
+
+### Variáveis de comportamento
+- PREFERENCES_LINK_BASE_URL (ex.: `http://localhost:3000/preferences`)
 
 ## Integrações
 
@@ -201,6 +210,43 @@ Linux/macOS com parâmetros opcionais:
 ```bash
 SEVERITY=CRITICAL ALERT_TYPE=warnings METRIC_NAME=current VALUE=912.6 bash ./scripts/simulate-notification.sh op_joao_silva
 ```
+
+### 6.1) Teste real-time da primeira mensagem com link de preferências
+Script disponível na raiz do repositório:
+- scripts/test-first-message-preferences-link.ps1
+
+PowerShell (Windows):
+```powershell
+.\scripts\test-first-message-preferences-link.ps1 -UserId op_joao_silva
+```
+
+O script usa `-Channel email` por defeito para evitar limitações de contas Twilio trial em SMS.
+
+Nota: por defeito, o script limpa o histórico de notificações para o target antes de enviar, garantindo cenário real de primeira mensagem (apenas para ambiente de teste local).
+
+PowerShell (Windows) — enviar primeira e segunda mensagem (comparação):
+```powershell
+.\scripts\test-first-message-preferences-link.ps1 -UserId op_joao_silva -AlsoSendSecond
+```
+
+PowerShell (Windows) — não limpar histórico (usa estado atual):
+```powershell
+.\scripts\test-first-message-preferences-link.ps1 -UserId op_joao_silva -EnsureFirstForTarget:$false
+```
+
+Opcional: usar target explícito (telefone/email) sem resolução por user_id:
+```powershell
+.\scripts\test-first-message-preferences-link.ps1 -Target "nr"
+```
+
+Teste em SMS (Twilio):
+```powershell
+.\scripts\test-first-message-preferences-link.ps1 -UserId op_joao_silva -Channel twilio_sms
+```
+
+Validação esperada:
+- A primeira mensagem inclui o link de preferências com `secret`.
+- A segunda mensagem (se enviada pelo script) já não inclui esse link.
 
 ### 7) Trigger manual de digest (ambiente local)
 Pré-condições para funcionamento:
