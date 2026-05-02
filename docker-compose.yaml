@@ -159,6 +159,7 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-alertasvoltguard@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      PREFERENCES_LINK_BASE_URL: ${PREFERENCES_LINK_BASE_URL:-http://localhost:3000/preferences}
       SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
