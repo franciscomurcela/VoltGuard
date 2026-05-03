@@ -35,6 +35,22 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # VAULT — Secret Manager (dev mode)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  vault:
+    image: hashicorp/vault:1.15
+    command: server -dev -dev-root-token-id=dev-root -dev-listen-address=0.0.0.0:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # COMPOSITOR — Backend
   # ═══════════════════════════════════════════════════════════════════════════
 
@@ -45,11 +61,12 @@ services:
     environment:
       PORT: 8080
       NODE_ENV: production
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET_PATH: secret/data/compositor
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: iot-compositor
       KEYCLOAK_CLIENT_ID: compositor-backend
-      KEYCLOAK_CLIENT_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
-      SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
       OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
       NOTIFICATION_SERVICE_URL: http://notifications-service:8083
       ANOMALY_SERVICE_URL: http://anomaly-api:8085
@@ -60,16 +77,16 @@ services:
       RATE_LIMIT_MAX_REQUESTS: 200
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CORS_ORIGIN: https://composer.voltguard.pt
-      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
-      AUTH_DISABLED: ${AUTH_DISABLED:-false}
-      ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
       COMPOSER_BASE_URL: ${COMPOSER_BASE_URL:-http://compositor-backend:8080}
       ANOMALY_NOTIFY_USER_IDS: ${ANOMALY_NOTIFY_USER_IDS:-op_joao_silva,op_maria_costa}
       DIGEST_INTERVAL_MS: ${DIGEST_INTERVAL_MS:-3600000}
     volumes:
       - compositor-data:/app/data
     depends_on:
+      vault:
+        condition: service_started
       oam-service:
         condition: service_healthy
       anomaly-api:
