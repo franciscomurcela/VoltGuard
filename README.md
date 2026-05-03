@@ -73,12 +73,15 @@ docker compose down
 Since Vault runs in -dev mode (in-memory), you must inject the secrets from your .env every time the container is recreated:
 
 Windows (PowerShell):
+```bash
 ./scripts/vault/seed_vault.ps1
+```
 
 Linux/macOS (Bash):
+```bash
 chmod +x seed_vault.sh
 ./scripts/vault/seed_vault.sh
-
+```
 
 ### 5. Start/Restart Application Services
 After seeding, restart the services so they can pull the new secrets from the "Vault":
