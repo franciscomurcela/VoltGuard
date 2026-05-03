@@ -177,6 +177,9 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
       SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET: PATH=secret/data/compositor
     depends_on:
       notifications-db:
         condition: service_healthy
@@ -271,6 +274,9 @@ services:
     environment:
       VG_MONGO_URI: mongodb://anomaly-db:27017/
       VG_MONGO_DB: voltguard
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET: PATH=secret/data/compositor
     depends_on:
       anomaly-db:
         condition: service_healthy

@@ -10,6 +10,7 @@ from app.routers.webhooks import router as webhooks_router
 from app.state import init_persistence
 from app.routers.ingestion import router as ingestion_router
 from app.ingestion import periodic_ingestion_service
+from .vault_loader import load_vault_secrets
 
 
 logging.basicConfig(
@@ -44,6 +45,8 @@ openapi_tags = [
         "description": "Camada de segurança e governança de acessos à API.",
     },
 ]
+
+load_vault_secrets()
 
 app = FastAPI(
     title="VoltGuard - Anomalies Detection API",

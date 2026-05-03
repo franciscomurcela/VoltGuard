@@ -69,6 +69,33 @@ To stop:
 docker compose down
 ```
 
+### 4. Seed Secrets (Vault)
+Since Vault runs in -dev mode (in-memory), you must inject the secrets from your .env every time the container is recreated:
+
+Windows (PowerShell):
+./scripts/vault/seed_vault.ps1
+
+Linux/macOS (Bash):
+chmod +x seed_vault.sh
+./scripts/vault/seed_vault.sh
+
+
+### 5. Start/Restart Application Services
+After seeding, restart the services so they can pull the new secrets from the "Vault":
+
+```bash
+docker compose restart compositor-backend notifications-service anomaly-api
+```
+
+## Secrets Management (Vault)
+To ensure high security, services do not read sensitive data directly from the .env file in production. Instead, they use a Secrets Loader pattern:
+
+Node.js (Backend): Uses vault.js to populate process.env.
+
+Python (Notifications/Anomaly): Uses vault_loader.py to populate os.environ.
+
+
+
 ## Service URLs
 
 All services are available through Kong on port 80 after setup.
@@ -129,6 +156,22 @@ python simulator.py
 ```
 
 The simulator sends measurements to the anomaly detection service and triggers the full notification pipeline when anomalies are detected.
+
+## Secrets Management (Vault)
+To ensure high security, services do not read sensitive data directly from the .env file in production. Instead, they use a Secrets Loader pattern:
+
+Node.js (Backend): Uses vault.js to populate process.env.
+
+Python (Notifications/Anomaly): Uses vault_loader.py to populate os.environ.
+
+Verification Tip: To ensure a service is truly using Vault, comment out the sensitive keys in your .env and restart the service. If it still works, it's successfully pulling from Vault.
+
+## Troubleshooting Vault & Keycloak
+404 Not Found (Backend): Vault was recreated and is empty. Re-run Step 4 (Seeding).
+
+401 Unauthorized: Ensure the ANOMALY_APP_TOKEN in Vault matches the one used by the services.
+
+Invalid parameter: redirect_uri: If this occurs on page refresh (F5), ensure the Keycloak Client has [https://composer.voltguard.pt/](https://composer.voltguard.pt/)* (with wildcard) in Valid Redirect URIs.
 
 ## Services Overview
 
