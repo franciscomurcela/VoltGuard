@@ -228,6 +228,9 @@ services:
       FIRMWARE_STORAGE_PATH: /app/firmware_storage
       BASE_URL: ${OAM_BASE_URL:-http://oam.voltguard.pt}
       RUST_LOG: ${LOG_LEVEL:-info}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET: PATH=secret/data/compositor
     volumes:
       - oam-firmware-storage:/app/firmware_storage
     depends_on:
