@@ -1,5 +1,4 @@
 use std::env;
-use std::collections::HashMap;
 
 pub fn load_vault_secrets() {
     let vault_addr = env::var("VAULT_ADDR").unwrap_or_else(|_| "http://vault:8200".to_string());
@@ -21,14 +20,16 @@ pub fn load_vault_secrets() {
             if response.status().is_success() {
                 let json: serde_json::Value = response.json().unwrap_or_default();
                 
-                // No Vault KV V2, os dados estão em ["data"]["data"]
                 if let Some(secrets) = json["data"]["data"].as_object() {
                     let mut count = 0;
                     for (key, value) in secrets {
-                        // Só injeta se a variável não estiver já definida no sistema
                         if env::var(key).is_err() {
                             let val_str = value.as_str().unwrap_or("");
-                            env::set_var(key, val_str);
+                            
+                            // Correção: set_var agora exige um bloco unsafe em Rust moderno
+                            unsafe {
+                                env::set_var(key, val_str);
+                            }
                             count += 1;
                         }
                     }
