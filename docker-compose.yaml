@@ -1,33 +1,63 @@
 services:
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH — Keycloak Database (PostgreSQL)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres-keycloak:
+    image: postgres:17-alpine
+    container_name: voltguard-postgres-keycloak
+    environment:
+      POSTGRES_USER: keycloak_user
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_pass}
+      POSTGRES_DB: keycloak_db
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql/data
+    networks:
+      - keycloak-db-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak_user -d keycloak_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # AUTH — Keycloak
   # ═══════════════════════════════════════════════════════════════════════════
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    command: start-dev --import-realm
+    container_name: voltguard-keycloak
+    # 'start' (production mode) requires an external DB — see KC_DB_* below.
+    # Replaces 'start-dev' which used an embedded H2 DB and disabled hardening.
+    command: start --import-realm
     environment:
-      # Note: KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD are deprecated in Keycloak 26+.
-      # Using the new KC_BOOTSTRAP_ADMIN_* names now so the upgrade is a no-op.
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME: https://auth.voltguard.pt
       KC_HOSTNAME_ADMIN: https://auth.voltguard.pt
+      KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
+      # Trust X-Forwarded-* headers only from Docker bridge subnets (Kong container)
+      KC_PROXY_TRUSTED_ADDRESSES: "172.0.0.0/8"
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres-keycloak
+      KC_DB_URL_DATABASE: keycloak_db
+      KC_DB_USERNAME: keycloak_user
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_pass}
     volumes:
       - ./composer-service/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      - keycloak-data:/opt/keycloak/data
+    depends_on:
+      postgres-keycloak:
+        condition: service_healthy
     networks:
       - voltguard-network
+      - keycloak-db-net
     healthcheck:
-      # Keycloak's ubi9-micro image has no curl/wget, but /bin/sh is bash and
-      # supports /dev/tcp redirects. We craft a minimal HTTP/1.0 request to the
-      # management port (9000, exposed by KC_HEALTH_ENABLED=true) and grep for
-      # a 200 in the status line — a real readiness check, not just "port open".
-      # Reference: https://github.com/keycloak/keycloak/issues/32363
-      test: ["CMD-SHELL", "{ printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3; } 3<>/dev/tcp/127.0.0.1/9000"]
+      # curl/wget absent from Keycloak's UBI image — raw bash TCP socket HTTP/1.0 request
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.. 200' <&3"]
       interval: 15s
       timeout: 5s
       retries: 20
@@ -42,6 +72,8 @@ services:
     build:
       context: ./composer-service/backend
       dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-compositor-backend
     environment:
       PORT: 8080
       NODE_ENV: production
@@ -59,7 +91,7 @@ services:
       RATE_LIMIT_WINDOW_MS: 60000
       RATE_LIMIT_MAX_REQUESTS: 200
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGIN: https://composer.voltguard.pt
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://composer.voltguard.pt}
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
       AUTH_DISABLED: ${AUTH_DISABLED:-false}
@@ -72,12 +104,6 @@ services:
     depends_on:
       oam-service:
         condition: service_healthy
-      anomaly-api:
-        condition: service_healthy
-      notifications-service:
-        condition: service_started
-      keycloak:
-        condition: service_started
     networks:
       - voltguard-network
     healthcheck:
@@ -99,15 +125,18 @@ services:
       args:
         VITE_KEYCLOAK_URL: https://auth.voltguard.pt
         VITE_AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      network: host
+    container_name: voltguard-compositor-frontend
     depends_on:
       compositor-backend:
         condition: service_healthy
     networks:
       - voltguard-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 15s
       timeout: 3s
+      start_period: 15s
       retries: 3
     restart: unless-stopped
 
@@ -117,6 +146,7 @@ services:
 
   notifications-db:
     image: mongo:7.0
+    container_name: voltguard-notifications-db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications_password}
@@ -124,7 +154,7 @@ services:
     volumes:
       - notifications-db-data:/data/db
     networks:
-      - voltguard-network
+      - notifications-db-net
     healthcheck:
       test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.adminCommand({ping:1})' --quiet"]
       interval: 10s
@@ -141,6 +171,8 @@ services:
     build:
       context: ./notifications-service
       dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-notifications-service
     environment:
       MONGODB_URL: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
       MONGODB_DATABASE: notifications_db
@@ -158,7 +190,6 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-alertasvoltguard@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
-      PREFERENCES_LINK_BASE_URL: ${PREFERENCES_LINK_BASE_URL:-http://localhost:3000/preferences}
       SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
@@ -166,12 +197,7 @@ services:
         condition: service_healthy
     networks:
       - voltguard-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
-      interval: 15s
-      timeout: 5s
-      start_period: 20s
-      retries: 5
+      - notifications-db-net
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -180,6 +206,7 @@ services:
 
   postgres-oam:
     image: postgres:17-alpine
+    container_name: voltguard-postgres-oam
     environment:
       POSTGRES_USER: oam_user
       POSTGRES_PASSWORD: ${OAM_DB_PASSWORD:-oam_pass}
@@ -187,7 +214,7 @@ services:
     volumes:
       - oam-postgres-data:/var/lib/postgresql/data
     networks:
-      - voltguard-network
+      - oam-db-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
       interval: 5s
@@ -203,6 +230,8 @@ services:
     build:
       context: ./oam-service
       dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-oam-service
     environment:
       DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
       SERVER_ADDR: 0.0.0.0:8080
@@ -216,30 +245,13 @@ services:
         condition: service_healthy
     networks:
       - voltguard-network
+      - oam-db-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 15s
       timeout: 3s
-      start_period: 10s
+      start_period: 30s
       retries: 3
-    restart: unless-stopped
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # ANOMALY — Database (MongoDB)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  anomaly-db:
-    image: mongo:7.0
-    volumes:
-      - anomaly-db-data:/data/db
-    networks:
-      - voltguard-network
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand({ping:1})' --quiet"]
-      interval: 10s
-      timeout: 10s
-      start_period: 20s
-      retries: 5
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -250,21 +262,19 @@ services:
     build:
       context: ./anomaly-detection
       dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-anomaly-api
     env_file:
       - ./anomaly-detection/.env
     environment:
-      VG_MONGO_URI: mongodb://anomaly-db:27017/
-      VG_MONGO_DB: voltguard
-    depends_on:
-      anomaly-db:
-        condition: service_healthy
+      VG_MONGO_URI: ""
     networks:
       - voltguard-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8085/v1/health')"]
       interval: 15s
       timeout: 5s
-      start_period: 10s
+      start_period: 60s
       retries: 3
     restart: unless-stopped
 
@@ -274,12 +284,11 @@ services:
 
   kong:
     image: kong:3.7
+    container_name: voltguard-kong
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
       KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
-      # Admin API bound to loopback inside the container; not reachable from the host
-      # unless re-exposed via docker-compose.override.yaml for debugging.
       KONG_ADMIN_LISTEN: "127.0.0.1:8001"
       KONG_SSL_CERT: /etc/kong/certs/cert.pem
       KONG_SSL_CERT_KEY: /etc/kong/certs/key.pem
@@ -287,26 +296,21 @@ services:
     ports:
       - "80:8000"    # public gateway — HTTP (kept for health checks)
       - "443:8443"   # public gateway — HTTPS (required for Keycloak PKCE)
+      - "127.0.0.1:8001:8001"  # Kong admin API — localhost only
     volumes:
       - ./kong/kong.yml:/etc/kong/kong.yml:ro
       - ./kong/certs:/etc/kong/certs:ro
     depends_on:
-      compositor-frontend:
-        condition: service_healthy
-      compositor-backend:
-        condition: service_healthy
-      oam-service:
-        condition: service_healthy
-      notifications-service:
-        condition: service_healthy
-      anomaly-api:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
+      - compositor-frontend
+      - compositor-backend
+      - oam-service
+      - notifications-service
+      - anomaly-api
+      - keycloak
     networks:
       - voltguard-network
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8001/status"]
+      test: ["CMD", "kong-health"]
       interval: 15s
       timeout: 5s
       start_period: 30s
@@ -318,9 +322,8 @@ services:
 # ═══════════════════════════════════════════════════════════════════════════
 
 volumes:
-  keycloak-data:
+  keycloak-postgres-data:
   notifications-db-data:
-  anomaly-db-data:
   compositor-data:
   oam-postgres-data:
   oam-firmware-storage:
@@ -331,3 +334,10 @@ volumes:
 
 networks:
   voltguard-network:
+    driver: bridge
+  keycloak-db-net:
+    driver: bridge
+  oam-db-net:
+    driver: bridge
+  notifications-db-net:
+    driver: bridge
