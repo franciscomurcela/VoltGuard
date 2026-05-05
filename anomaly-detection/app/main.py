@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 
 from app.routers.health import router as health_router
 from app.routers.auth import router as auth_router
@@ -74,3 +76,25 @@ app.include_router(measurements_router)
 app.include_router(anomalies_router)
 app.include_router(models_router)
 app.include_router(webhooks_router)
+
+# Prometheus metrics
+request_counter = Counter("anomaly_api_requests_total", "Total HTTP requests received by anomaly API")
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        try:
+            request_counter.inc()
+        except Exception:
+            pass
+        response = await call_next(request)
+        return response
+
+
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+async def metrics():
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

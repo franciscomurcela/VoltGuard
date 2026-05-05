@@ -19,3 +19,4 @@ python-dateutil==2.9.0
 
 #python multipart
 python-multipart==0.0.9
+prometheus-client==0.16.0

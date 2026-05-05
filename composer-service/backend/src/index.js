@@ -15,6 +15,7 @@ import config from './config/services.js'
 import logger from './utils/logger.js'
 import rateLimiter from './middleware/rateLimiter.js'
 import errorHandler from './middleware/errorHandler.js'
+import { metricsMiddleware, metricsHandler } from './middleware/metrics.js'
 import { initDatabase, cachePurge, closeDatabase } from './config/database.js'
 import healthRoutes from './routes/health.js'
 import deviceRoutes from './routes/devices.js'
@@ -61,6 +62,8 @@ app.use(morgan('short', {
 app.use(sessionMiddleware)
 app.use(keycloak.middleware())
 app.use(rateLimiter)
+// Metrics middleware should be early to capture requests
+app.use(metricsMiddleware)
 
 // ─── API Docs (no auth — public) ────────────────────────────────────────────
 // Raw YAML spec — consumed by the multi-spec dropdown and external tools
@@ -92,6 +95,8 @@ app.use(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 // Health routes are public (no auth) — K8s probes need unauthenticated access
 app.use('/api/health', healthRoutes)
+// Prometheus metrics endpoint (root path) — Prometheus will scrape this
+app.get('/metrics', metricsHandler)
 app.use('/api/public', preferencesRoutes)
 // Internal webhook receiver — called by peer services, no user auth
 app.use('/api/webhooks', webhookRoutes)
