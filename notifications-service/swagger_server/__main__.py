@@ -11,6 +11,8 @@ _env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=_env_path, override=True)
 
 import connexion
+from flask import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 
 from swagger_server import encoder
 from swagger_server.db import get_db
@@ -32,6 +34,11 @@ def main():
         arguments={'title': 'Notifications API (Multichannel Gateway)'},
         pythonic_params=True
     )
+
+    # Expose /metrics via Flask
+    @app.app.route('/metrics')
+    def metrics():
+        return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
     port = int(os.environ.get('SERVER_PORT', 8083))
     host = os.environ.get('SERVER_HOST', '0.0.0.0')

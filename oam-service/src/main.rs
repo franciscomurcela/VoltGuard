@@ -7,6 +7,7 @@ mod error;
 mod handlers;
 mod models;
 mod openapi;
+mod metrics;
 
 #[tokio::main]
 async fn main() {

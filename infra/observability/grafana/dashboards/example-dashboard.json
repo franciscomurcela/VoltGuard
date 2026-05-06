@@ -1,0 +1,129 @@
+{
+  "id": null,
+  "uid": "voltguard-overview",
+  "title": "VoltGuard - Observability Overview",
+  "tags": ["voltguard", "observability"],
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 2,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active Targets",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        { "expr": "count(up == 1)", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Down Targets",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "count(up == 0)", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Targets Up by Job",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 0 },
+      "id": 3,
+      "targets": [
+        { "expr": "sum(up) by (job)", "legendFormat": "{{job}}", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Rate by Job",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "id": 4,
+      "targets": [
+        { "expr": "sum(rate(http_requests_total[1m])) by (job)", "legendFormat": "{{job}}", "refId": "D" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 5xx Rate by Job",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "id": 5,
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) by (job)", "legendFormat": "{{job}}", "refId": "E" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Compositor Latency P95",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"compositor-backend\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "F"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "OAM Requests by Path",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "id": 7,
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{job=\"oam-service\"}[1m])) by (path)", "legendFormat": "{{path}}", "refId": "G" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Anomaly API Requests",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "id": 8,
+      "targets": [
+        { "expr": "rate(anomaly_api_requests_total[1m])", "legendFormat": "anomaly-api", "refId": "H" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Host CPU Usage (%)",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
+      "id": 9,
+      "targets": [
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "cpu", "refId": "I" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Host Memory Usage (%)",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "memory",
+          "refId": "J"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "MongoDB Up",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 30 },
+      "id": 11,
+      "targets": [
+        { "expr": "max(mongodb_up)", "refId": "K" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Notifications Requests by Path",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 30 },
+      "id": 12,
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{job=\"notifications-service\"}[1m])) by (path)", "legendFormat": "{{path}}", "refId": "L" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" }
+}

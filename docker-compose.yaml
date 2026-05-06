@@ -94,11 +94,13 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://composer.voltguard.pt}
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       COMPOSITOR_CLIENT_ID: energy_composer
-      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
       ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
       COMPOSER_BASE_URL: ${COMPOSER_BASE_URL:-http://compositor-backend:8080}
       ANOMALY_NOTIFY_USER_IDS: ${ANOMALY_NOTIFY_USER_IDS:-op_joao_silva,op_maria_costa}
       DIGEST_INTERVAL_MS: ${DIGEST_INTERVAL_MS:-3600000}
+    ports:
+      - "8080:8080"
     volumes:
       - compositor-data:/app/data
     depends_on:
@@ -151,6 +153,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications_password}
       MONGO_INITDB_DATABASE: notifications_db
+    ports:
+      - "27017:27017"
     volumes:
       - notifications-db-data:/data/db
     networks:
@@ -240,6 +244,8 @@ services:
       RUST_LOG: ${LOG_LEVEL:-info}
     volumes:
       - oam-firmware-storage:/app/firmware_storage
+    ports:
+      - "8084:8080"
     depends_on:
       postgres-oam:
         condition: service_healthy
@@ -317,6 +323,61 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY — Prometheus + Grafana + Exporters
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: voltguard-prometheus
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:9.5.15
+    container_name: voltguard-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3002:3000"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: voltguard-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    container_name: voltguard-mongodb-exporter
+    environment:
+      MONGODB_URI: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
+    ports:
+      - "9216:9216"
+    depends_on:
+      - notifications-db
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
 # ═══════════════════════════════════════════════════════════════════════════
 # VOLUMES
 # ═══════════════════════════════════════════════════════════════════════════
@@ -327,6 +388,8 @@ volumes:
   compositor-data:
   oam-postgres-data:
   oam-firmware-storage:
+  prometheus-data:
+  grafana-data:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NETWORK
