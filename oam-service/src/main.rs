@@ -8,6 +8,7 @@ mod handlers;
 mod models;
 mod openapi;
 mod metrics;
+mod vault_loader;
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +17,8 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+    vault_loader::load_vault_secrets();
 
     let config = config::Config::from_env();
 
