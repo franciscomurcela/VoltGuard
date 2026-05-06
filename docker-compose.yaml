@@ -81,6 +81,38 @@ services:
     restart: unless-stopped
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # VAULT SEEDER — one-shot init that populates secret/compositor on every up.
+  # Consumers depend on it with service_completed_successfully so they only
+  # boot after secrets exist. Replaces the manual seed-vault.sh + restart cycle.
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  vault-seeder:
+    image: hashicorp/vault:1.15
+    container_name: voltguard-vault-seeder
+    depends_on:
+      vault:
+        condition: service_started
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
+      COMPOSITOR_KC_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
+      SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
+    networks:
+      - voltguard-network
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        until vault status >/dev/null 2>&1; do sleep 1; done
+        vault kv put secret/compositor \
+          NOTIFICATIONS_AUTH_TOKEN="$$NOTIFICATIONS_AUTH_TOKEN" \
+          ANOMALY_APP_TOKEN="$$ANOMALY_APP_TOKEN" \
+          COMPOSITOR_KC_SECRET="$$COMPOSITOR_KC_SECRET" \
+          SESSION_SECRET="$$SESSION_SECRET"
+    restart: "no"
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # COMPOSITOR — Backend
   # ═══════════════════════════════════════════════════════════════════════════
 
@@ -120,8 +152,8 @@ services:
     volumes:
       - compositor-data:/app/data
     depends_on:
-      vault:
-        condition: service_started
+      vault-seeder:
+        condition: service_completed_successfully
       oam-service:
         condition: service_healthy
     networks:
@@ -216,10 +248,12 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: dev-root
-      VAULT_SECRET: PATH=secret/data/compositor
+      VAULT_SECRET_PATH: secret/data/compositor
     depends_on:
       notifications-db:
         condition: service_healthy
+      vault-seeder:
+        condition: service_completed_successfully
     networks:
       - voltguard-network
       - notifications-db-net
@@ -265,7 +299,7 @@ services:
       RUST_LOG: ${LOG_LEVEL:-info}
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: dev-root
-      VAULT_SECRET: PATH=secret/data/compositor
+      VAULT_SECRET_PATH: secret/data/compositor
     volumes:
       - oam-firmware-storage:/app/firmware_storage
     ports:
@@ -273,6 +307,8 @@ services:
     depends_on:
       postgres-oam:
         condition: service_healthy
+      vault-seeder:
+        condition: service_completed_successfully
     networks:
       - voltguard-network
       - oam-db-net
@@ -302,8 +338,8 @@ services:
       VAULT_TOKEN: dev-root
       VAULT_SECRET_PATH: secret/data/compositor
     depends_on:
-      vault:
-        condition: service_started
+      vault-seeder:
+        condition: service_completed_successfully
     networks:
       - voltguard-network
     healthcheck:

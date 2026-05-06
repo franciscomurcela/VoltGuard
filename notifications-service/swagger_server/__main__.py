@@ -16,7 +16,7 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 
 from swagger_server import encoder
 from swagger_server.db import get_db
-from vault_loader import load_vault_secrets 
+from swagger_server.vault_loader import load_vault_secrets
 
 logging.basicConfig(
     level=logging.INFO,
