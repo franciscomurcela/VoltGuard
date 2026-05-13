@@ -1,21 +1,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# SECRETS
+# NOTE: Secrets are NOT in this file.
+# Apply k8s/secrets.yaml first (gitignored — copy from secrets.yaml.example).
 # ═══════════════════════════════════════════════════════════════════════════
 
-apiVersion: v1
-kind: Secret
-metadata:
-  name: voltguard-secrets
-  namespace: tenant-grupo4-egs-deti-ua-pt
-stringData:
-  COMPOSITOR_KC_SECRET: "change-me-in-production"
-  COMPOSITOR_SESSION_SECRET: "change-me-random-32-chars"
-  NOTIFICATIONS_AUTH_TOKEN: "your_secure_auth_token"
-  ANOMALY_APP_TOKEN: "token_do_composer_123"
-  OAM_DB_PASSWORD: "oam_pass"
-  DATABASE_URL: "postgres://oam_user:oam_pass@postgres-oam:5432/oam_db"
-
----
 # ═══════════════════════════════════════════════════════════════════════════
 # PERSISTENT VOLUME CLAIMS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -56,6 +43,30 @@ spec:
       storage: 1Gi
 
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notifications-db-data
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-postgres-data
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
 # ═══════════════════════════════════════════════════════════════════════════
 # COMPOSITOR — Backend
 # ═══════════════════════════════════════════════════════════════════════════
@@ -80,6 +91,7 @@ spec:
       containers:
         - name: compositor-backend
           image: registry.deti/grupo4-egs-deti.ua.pt/compositor-backend:v1
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:
@@ -153,6 +165,13 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
             failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: compositor-data
           persistentVolumeClaim:
@@ -194,6 +213,7 @@ spec:
       containers:
         - name: compositor-frontend
           image: registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v1
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           readinessProbe:
@@ -202,6 +222,13 @@ spec:
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
             failureThreshold: 3
 
 ---
@@ -265,6 +292,12 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "oam_user", "-d", "oam_db"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 5
       volumes:
         - name: oam-postgres-data
           persistentVolumeClaim:
@@ -308,6 +341,7 @@ spec:
       containers:
         - name: oam-service
           image: registry.deti/grupo4-egs-deti.ua.pt/oam-service:v1
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:
@@ -316,7 +350,7 @@ spec:
             - name: FIRMWARE_STORAGE_PATH
               value: "/app/firmware_storage"
             - name: BASE_URL
-              value: "https://grupo4-egs-deti.ua.pt"
+              value: "https://grupo4-egs-deti.ua.pt/oam"
             - name: RUST_LOG
               value: "info"
             - name: DATABASE_URL
@@ -334,6 +368,13 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: oam-firmware-storage
           persistentVolumeClaim:
@@ -354,6 +395,673 @@ spec:
 
 ---
 # ═══════════════════════════════════════════════════════════════════════════
+# ANOMALY DETECTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-anomaly-api
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grupo4-anomaly-api
+  template:
+    metadata:
+      labels:
+        app: grupo4-anomaly-api
+    spec:
+      containers:
+        - name: anomaly-api
+          image: registry.deti/grupo4-egs-deti.ua.pt/anomaly-api:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8085
+          env:
+            - name: VG_MONGO_URI
+              value: ""
+            - name: VG_MONGO_DB
+              value: "voltguard"
+            - name: VG_PERIODIC_INGESTION_ENABLED
+              value: "0"
+            - name: VG_INGESTION_INTERVAL_SECONDS
+              value: "60"
+            - name: VG_INGESTION_MODE
+              value: "composer_push"
+            - name: VG_COMPOSER_BASE_URL
+              value: "http://compositor-backend:8080"
+            - name: VG_COMPOSER_SENSORS_PATH
+              value: "/v1/sensors"
+            - name: VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE
+              value: "/v1/sensors/{sensor_id}/measurements?limit={limit}"
+            - name: VG_COMPOSER_DATASETS_POST_PATH
+              value: "/v1/anomalies/datasets/push"
+            - name: VG_COMPOSER_TIMEOUT_SECONDS
+              value: "20"
+            - name: VG_COMPOSER_WEBHOOK_URL
+              value: "http://compositor-backend:8080/api/v1/anomalies/webhook"
+            - name: VG_COMPOSER_MEASUREMENTS_LIMIT
+              value: "500"
+            - name: VG_DEFAULT_METRIC_NAME
+              value: "voltage"
+            - name: VG_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: VG_APP_TOKEN
+            - name: VG_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: VG_ADMIN_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8085
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8085
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anomaly-api
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-anomaly-api
+  ports:
+    - port: 8085
+      targetPort: 8085
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# NOTIFICATIONS — Database (MongoDB)
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-notifications-db
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grupo4-notifications-db
+  template:
+    metadata:
+      labels:
+        app: grupo4-notifications-db
+    spec:
+      containers:
+        - name: notifications-db
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "admin"
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: NOTIFICATIONS_DB_PASSWORD
+            - name: MONGO_INITDB_DATABASE
+              value: "notifications_db"
+          volumeMounts:
+            - name: notifications-db-data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "mongosh --username admin --password $MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\" --quiet"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
+      volumes:
+        - name: notifications-db-data
+          persistentVolumeClaim:
+            claimName: notifications-db-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-db
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-notifications-db
+  ports:
+    - port: 27017
+      targetPort: 27017
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# NOTIFICATIONS — Service
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-notifications-service
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grupo4-notifications-service
+  template:
+    metadata:
+      labels:
+        app: grupo4-notifications-service
+    spec:
+      containers:
+        - name: notifications-service
+          image: registry.deti/grupo4-egs-deti.ua.pt/notifications-service:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: MONGODB_DATABASE
+              value: "notifications_db"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: "8083"
+            - name: SEED_DEFAULT_PREFERENCES
+              value: "true"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: SMTP_HOST
+              value: "smtp.gmail.com"
+            - name: SMTP_PORT
+              value: "587"
+            - name: SMTP_USE_TLS
+              value: "true"
+            - name: SMTP_FROM_EMAIL
+              value: "alertasvoltguard@gmail.com"
+            - name: TWILIO_FROM_EMAIL
+              value: "alertasvoltguard@gmail.com"
+            - name: MONGODB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: MONGODB_URL
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: NOTIFICATIONS_AUTH_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-service
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-notifications-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# KONG — ConfigMap
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: tenant-grupo4-egs-deti-ua-pt
+data:
+  kong.yml: |
+    _format_version: "2.1"
+    _transform: true
+
+    services:
+      - name: composer-backend
+        url: http://compositor-backend:8080
+        routes:
+          - name: composer-api
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /api
+            strip_path: false
+
+      - name: composer-frontend
+        url: http://compositor-frontend:80
+        routes:
+          - name: composer-ui
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /
+            strip_path: false
+
+      - name: oam-service
+        url: http://oam-service:8080
+        routes:
+          - name: oam
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /oam
+            strip_path: true
+
+      - name: notifications-service
+        url: http://notifications-service:8083
+        routes:
+          - name: notifications
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /notifications
+            strip_path: true
+
+      - name: anomaly-api
+        url: http://anomaly-api:8085
+        routes:
+          - name: anomaly
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /anomaly
+            strip_path: true
+
+      - name: keycloak
+        url: http://keycloak:8080
+        routes:
+          - name: auth
+            hosts:
+              - grupo4-egs-deti.ua.pt
+            paths:
+              - /auth
+            strip_path: false
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# KEYCLOAK — Realm ConfigMap
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: tenant-grupo4-egs-deti-ua-pt
+data:
+  realm-export.json: |
+    {
+      "realm": "iot-compositor",
+      "enabled": true,
+      "displayName": "IoT Compositor",
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "roles": {
+        "realm": [
+          { "name": "admin", "description": "Full access" },
+          { "name": "operator", "description": "Read-only access" }
+        ]
+      },
+      "defaultRoles": ["operator"],
+      "clients": [
+        {
+          "clientId": "compositor-frontend",
+          "name": "Compositor Frontend",
+          "enabled": true,
+          "publicClient": true,
+          "directAccessGrantsEnabled": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "protocol": "openid-connect",
+          "redirectUris": [
+            "http://localhost:3000/*",
+            "http://composer.voltguard.pt/*",
+            "https://composer.voltguard.pt/*",
+            "http://grupo4-egs-deti.ua.pt/*",
+            "https://grupo4-egs-deti.ua.pt/*"
+          ],
+          "webOrigins": [
+            "http://localhost:3000",
+            "http://composer.voltguard.pt",
+            "https://composer.voltguard.pt",
+            "http://grupo4-egs-deti.ua.pt",
+            "https://grupo4-egs-deti.ua.pt"
+          ],
+          "defaultClientScopes": ["web-origins", "profile", "roles", "email"]
+        },
+        {
+          "clientId": "compositor-backend",
+          "name": "Compositor Backend",
+          "enabled": true,
+          "publicClient": false,
+          "bearerOnly": true,
+          "protocol": "openid-connect",
+          "secret": "change-me-in-production",
+          "defaultClientScopes": ["web-origins", "profile", "roles", "email"]
+        }
+      ],
+      "users": [
+        {
+          "username": "admin",
+          "email": "admin@compositor.pt",
+          "firstName": "Admin",
+          "lastName": "Compositor",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [{ "type": "password", "value": "admin123", "temporary": true }],
+          "realmRoles": ["admin"]
+        },
+        {
+          "username": "operator",
+          "email": "operator@compositor.pt",
+          "firstName": "Operator",
+          "lastName": "User",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [{ "type": "password", "value": "operator123", "temporary": true }],
+          "realmRoles": ["operator"]
+        }
+      ],
+      "scopeMappings": [
+        { "client": "compositor-frontend", "roles": ["admin", "operator"] }
+      ]
+    }
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# AUTH — Keycloak Database (PostgreSQL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-postgres-keycloak
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grupo4-postgres-keycloak
+  template:
+    metadata:
+      labels:
+        app: grupo4-postgres-keycloak
+    spec:
+      containers:
+        - name: postgres-keycloak
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "keycloak_user"
+            - name: POSTGRES_DB
+              value: "keycloak_db"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: KEYCLOAK_DB_PASSWORD
+          volumeMounts:
+            - name: keycloak-postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "keycloak_user", "-d", "keycloak_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "keycloak_user", "-d", "keycloak_db"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: keycloak-postgres-data
+          persistentVolumeClaim:
+            claimName: keycloak-postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-keycloak
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-postgres-keycloak
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# AUTH — Keycloak
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-keycloak
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grupo4-keycloak
+  template:
+    metadata:
+      labels:
+        app: grupo4-keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          args: ["start", "--import-realm"]
+          ports:
+            - containerPort: 8080
+            - containerPort: 9000
+          env:
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_HTTP_RELATIVE_PATH
+              value: "/auth"
+            - name: KC_HOSTNAME
+              value: "https://grupo4-egs-deti.ua.pt"
+            - name: KC_HOSTNAME_ADMIN
+              value: "https://grupo4-egs-deti.ua.pt"
+            - name: KC_PROXY_HEADERS
+              value: "xforwarded"
+            - name: KC_PROXY_TRUSTED_ADDRESSES
+              value: "10.0.0.0/8"
+            - name: KC_DB
+              value: "postgres"
+            - name: KC_DB_URL_HOST
+              value: "postgres-keycloak"
+            - name: KC_DB_URL_DATABASE
+              value: "keycloak_db"
+            - name: KC_DB_USERNAME
+              value: "keycloak_user"
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: "admin"
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: KEYCLOAK_DB_PASSWORD
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: KEYCLOAK_ADMIN_PASSWORD
+          volumeMounts:
+            - name: keycloak-realm
+              mountPath: /opt/keycloak/data/import/realm-export.json
+              subPath: realm-export.json
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 150
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: keycloak-realm
+          configMap:
+            name: keycloak-realm
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: management
+      port: 9000
+      targetPort: 9000
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# KONG — API Gateway
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grupo4-kong
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grupo4-kong
+  template:
+    metadata:
+      labels:
+        app: grupo4-kong
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.7
+          ports:
+            - containerPort: 8000
+            - containerPort: 8001
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/etc/kong/kong.yml"
+            - name: KONG_PROXY_LISTEN
+              value: "0.0.0.0:8000"
+            - name: KONG_ADMIN_LISTEN
+              value: "127.0.0.1:8001"
+            - name: KONG_LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: kong-config
+              mountPath: /etc/kong/kong.yml
+              subPath: kong.yml
+          readinessProbe:
+            exec:
+              command: ["kong", "health"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: grupo4-kong
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
 # INGRESS
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -371,6 +1079,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: compositor-frontend
+                name: kong
                 port:
-                  number: 80
+                  number: 8000

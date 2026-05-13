@@ -39,13 +39,17 @@
         "http://localhost:3000/*",
         "http://composer.voltguard.pt/*",
         "https://composer.voltguard.pt/*",
-        "https://compositor.example.com/*"
+        "https://compositor.example.com/*",
+        "http://grupo4-egs-deti.ua.pt/*",
+        "https://grupo4-egs-deti.ua.pt/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
         "http://composer.voltguard.pt",
         "https://composer.voltguard.pt/*",
-        "https://compositor.example.com"
+        "https://compositor.example.com",
+        "http://grupo4-egs-deti.ua.pt",
+        "https://grupo4-egs-deti.ua.pt"
       ],
       "defaultClientScopes": [
         "web-origins",
