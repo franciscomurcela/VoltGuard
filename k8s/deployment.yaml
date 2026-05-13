@@ -88,6 +88,10 @@ spec:
       labels:
         app: grupo4-compositor-backend
     spec:
+      hostAliases:
+        - ip: "193.136.82.35"
+          hostnames:
+            - "grupo4-egs-deti.ua.pt"
       containers:
         - name: compositor-backend
           image: registry.deti/grupo4-egs-deti.ua.pt/compositor-backend:v1
@@ -100,9 +104,13 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: AUTH_DISABLED
-              value: "true"
+              value: "false"
             - name: KEYCLOAK_URL
-              value: "http://keycloak:8080"
+              value: "https://grupo4-egs-deti.ua.pt/auth"
+            - name: KEYCLOAK_SKIP_TLS_VERIFY
+              value: "true"
+            - name: KEYCLOAK_SSL_REQUIRED
+              value: "none"
             - name: KEYCLOAK_REALM
               value: "iot-compositor"
             - name: KEYCLOAK_CLIENT_ID

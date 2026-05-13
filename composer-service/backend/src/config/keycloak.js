@@ -2,9 +2,16 @@ import Keycloak from 'keycloak-connect'
 import session from 'express-session'
 import logger from '../utils/logger.js'
 
+// ─── TLS override ───────────────────────────────────────────────────────────
+// Needed when Keycloak is behind a TLS terminator with an institutional cert
+// that is not in Node's built-in CA bundle (e.g. university infrastructure).
+// Set KEYCLOAK_SKIP_TLS_VERIFY=true in the deployment env to enable.
+if (process.env.KEYCLOAK_SKIP_TLS_VERIFY === 'true') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+  logger.warn('TLS certificate verification disabled (KEYCLOAK_SKIP_TLS_VERIFY=true)')
+}
+
 // ─── Session Store (required by keycloak-connect) ───────────────────────────
-// In production, replace with a Redis-backed store (e.g. connect-redis) so
-// sessions survive container restarts.
 const memoryStore = new session.MemoryStore()
 
 export const sessionMiddleware = session({
@@ -15,7 +22,7 @@ export const sessionMiddleware = session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 3600000, // 1 hour
+    maxAge: 3600000,
   },
 })
 
@@ -23,19 +30,19 @@ export const sessionMiddleware = session({
 const keycloakConfig = {
   realm: process.env.KEYCLOAK_REALM || 'iot-compositor',
   'auth-server-url': process.env.KEYCLOAK_URL || 'http://localhost:8081',
-  'ssl-required': process.env.NODE_ENV === 'production' ? 'external' : 'none',
+  'ssl-required': process.env.KEYCLOAK_SSL_REQUIRED || (process.env.NODE_ENV === 'production' ? 'external' : 'none'),
   resource: process.env.KEYCLOAK_CLIENT_ID || 'compositor-backend',
   credentials: {
     secret: process.env.KEYCLOAK_CLIENT_SECRET || 'change-me-in-production',
   },
   'confidential-port': 0,
-  'bearer-only': true,  // Backend only validates tokens, never redirects to login
+  'bearer-only': true,
 }
 
 const keycloak = new Keycloak({ store: memoryStore }, keycloakConfig)
 
 logger.info(
-  { realm: keycloakConfig.realm, url: keycloakConfig['auth-server-url'] },
+  { realm: keycloakConfig.realm, url: keycloakConfig['auth-server-url'], sslRequired: keycloakConfig['ssl-required'] },
   'Keycloak configured (bearer-only)'
 )
 
