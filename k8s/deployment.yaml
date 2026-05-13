@@ -63,7 +63,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: compositor-backend
+  name: grupo4-compositor-backend
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   replicas: 1
@@ -71,11 +71,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: compositor-backend
+      app: grupo4-compositor-backend
   template:
     metadata:
       labels:
-        app: compositor-backend
+        app: grupo4-compositor-backend
     spec:
       containers:
         - name: compositor-backend
@@ -166,7 +166,7 @@ metadata:
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   selector:
-    app: compositor-backend
+    app: grupo4-compositor-backend
   ports:
     - port: 8080
       targetPort: 8080
@@ -179,17 +179,17 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: compositor-frontend
+  name: grupo4-compositor-frontend
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: compositor-frontend
+      app: grupo4-compositor-frontend
   template:
     metadata:
       labels:
-        app: compositor-frontend
+        app: grupo4-compositor-frontend
     spec:
       containers:
         - name: compositor-frontend
@@ -212,7 +212,7 @@ metadata:
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   selector:
-    app: compositor-frontend
+    app: grupo4-compositor-frontend
   ports:
     - port: 80
       targetPort: 80
@@ -225,7 +225,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres-oam
+  name: grupo4-postgres-oam
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   replicas: 1
@@ -233,11 +233,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: postgres-oam
+      app: grupo4-postgres-oam
   template:
     metadata:
       labels:
-        app: postgres-oam
+        app: grupo4-postgres-oam
     spec:
       containers:
         - name: postgres-oam
@@ -278,7 +278,7 @@ metadata:
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   selector:
-    app: postgres-oam
+    app: grupo4-postgres-oam
   ports:
     - port: 5432
       targetPort: 5432
@@ -291,7 +291,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: oam-service
+  name: grupo4-oam-service
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   replicas: 1
@@ -299,11 +299,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: oam-service
+      app: grupo4-oam-service
   template:
     metadata:
       labels:
-        app: oam-service
+        app: grupo4-oam-service
     spec:
       containers:
         - name: oam-service
@@ -347,7 +347,7 @@ metadata:
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   selector:
-    app: oam-service
+    app: grupo4-oam-service
   ports:
     - port: 8080
       targetPort: 8080
