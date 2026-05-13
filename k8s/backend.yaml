@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compositor-backend
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: compositor-backend
+  template:
+    metadata:
+      labels:
+        app: compositor-backend
+    spec:
+      containers:
+        - name: compositor-backend
+          image: registry.deti/grupo4-egs-deti.ua.pt/compositor-backend:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: NODE_ENV
+              value: "production"
+            - name: AUTH_DISABLED
+              value: "true"
+            - name: KEYCLOAK_URL
+              value: "http://keycloak:8080"
+            - name: KEYCLOAK_REALM
+              value: "iot-compositor"
+            - name: KEYCLOAK_CLIENT_ID
+              value: "compositor-backend"
+            - name: COMPOSITOR_CLIENT_ID
+              value: "energy_composer"
+            - name: OAM_SERVICE_URL
+              value: "http://oam-service:8080"
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://notifications-service:8083"
+            - name: ANOMALY_SERVICE_URL
+              value: "http://anomaly-api:8085"
+            - name: CORS_ORIGIN
+              value: "https://grupo4-egs-deti.ua.pt"
+            - name: COMPOSER_BASE_URL
+              value: "https://grupo4-egs-deti.ua.pt"
+            - name: ANOMALY_NOTIFY_USER_IDS
+              value: "op_joao_silva,op_maria_costa"
+            - name: PROXY_TIMEOUT_MS
+              value: "8000"
+            - name: PROXY_RETRY_COUNT
+              value: "1"
+            - name: PROXY_RETRY_DELAY_MS
+              value: "500"
+            - name: RATE_LIMIT_WINDOW_MS
+              value: "60000"
+            - name: RATE_LIMIT_MAX_REQUESTS
+              value: "200"
+            - name: DIGEST_INTERVAL_MS
+              value: "3600000"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: COMPOSITOR_KC_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: COMPOSITOR_SESSION_SECRET
+            - name: NOTIFICATIONS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: NOTIFICATIONS_AUTH_TOKEN
+            - name: ANOMALY_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: ANOMALY_APP_TOKEN
+          volumeMounts:
+            - name: compositor-data
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: compositor-data
+          persistentVolumeClaim:
+            claimName: compositor-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compositor-backend
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: compositor-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
