@@ -919,10 +919,12 @@ spec:
               value: "true"
             - name: KC_HTTP_RELATIVE_PATH
               value: "/auth"
+            - name: KC_HTTP_MANAGEMENT_RELATIVE_PATH
+              value: "/"
             - name: KC_HOSTNAME
-              value: "https://grupo4-egs-deti.ua.pt"
+              value: "https://grupo4-egs-deti.ua.pt/auth"
             - name: KC_HOSTNAME_ADMIN
-              value: "https://grupo4-egs-deti.ua.pt"
+              value: "https://grupo4-egs-deti.ua.pt/auth"
             - name: KC_PROXY_HEADERS
               value: "xforwarded"
             - name: KC_PROXY_TRUSTED_ADDRESSES
