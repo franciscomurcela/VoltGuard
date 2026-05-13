@@ -4,6 +4,8 @@ import useDevices from '../hooks/useDevices'
 import AnomalyTable from '../components/anomalies/AnomalyTable'
 import AnomalyDetail from '../components/anomalies/AnomalyDetail'
 import ModelConfig from '../components/anomalies/ModelConfig'
+import ConfirmDialog from '../components/common/ConfirmDialog'
+import { anomaliesApi } from '../services/api'
 
 export default function Anomalies() {
   const {
@@ -24,6 +26,24 @@ export default function Anomalies() {
   const [registeredOnly, setRegisteredOnly] = useState(true)
   const [showConfig, setShowConfig] = useState(false)
   const [detailError, setDetailError] = useState(null)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState(null)
+
+  const handleClearAll = async () => {
+    setClearing(true)
+    setClearError(null)
+    try {
+      await anomaliesApi.clearAll()
+      setClearConfirmOpen(false)
+      // Refetch to reflect empty state
+      await fetchAnomalies({ source_id: sourceFilter || undefined })
+    } catch (err) {
+      setClearError(err?.response?.data?.message || err.message || 'Failed to clear anomalies')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const deviceMap = new Map((devices || []).map((d) => [d.id, d]))
   const sourceOptions = (devices || []).map((d) => ({ value: d.id, label: `${d.id} · ${d.name}` }))
@@ -74,21 +94,64 @@ export default function Anomalies() {
             {displayedAnomalies.total || 0} anomalies shown · {summary?.jobs_completed || 0} jobs processed
           </p>
         </div>
-        <button
-          onClick={() => setShowConfig(!showConfig)}
-          style={{
-            padding: '9px 22px',
-            background: showConfig ? 'var(--accent-red-dim)' : 'rgba(139,92,246,0.12)',
-            border: `1px solid ${showConfig ? 'rgba(239,68,68,0.25)' : 'rgba(139,92,246,0.25)'}`,
-            borderRadius: 'var(--radius-md)',
-            color: showConfig ? 'var(--accent-red)' : 'var(--accent-purple)',
-            fontSize: 13,
-            fontWeight: 500,
-          }}
-        >
-          {showConfig ? 'Close Config' : '⚙ Model Config'}
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => { setClearError(null); setClearConfirmOpen(true) }}
+            title="Wipe every anomaly from the anomaly service (demo reset)"
+            style={{
+              padding: '9px 18px',
+              background: 'rgba(239,68,68,0.10)',
+              border: '1px solid rgba(239,68,68,0.30)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--accent-red)',
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            🗑 Clear All
+          </button>
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            style={{
+              padding: '9px 22px',
+              background: showConfig ? 'var(--accent-red-dim)' : 'rgba(139,92,246,0.12)',
+              border: `1px solid ${showConfig ? 'rgba(239,68,68,0.25)' : 'rgba(139,92,246,0.25)'}`,
+              borderRadius: 'var(--radius-md)',
+              color: showConfig ? 'var(--accent-red)' : 'var(--accent-purple)',
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            {showConfig ? 'Close Config' : '⚙ Model Config'}
+          </button>
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title="Clear all anomalies"
+        description={(
+          <>
+            <p style={{ margin: '0 0 12px' }}>
+              This wipes <strong>every anomaly record</strong> from the anomaly service —
+              including historical detections, sensor-summary aggregates, and detail rows.
+            </p>
+            <p style={{ margin: 0, color: 'var(--accent-red)' }}>
+              This cannot be undone. Notifications are not affected.
+            </p>
+            {clearError && (
+              <p style={{ marginTop: 12, color: 'var(--accent-red)', fontSize: 12 }}>
+                Error: {clearError}
+              </p>
+            )}
+          </>
+        )}
+        confirmPhrase="DELETE"
+        confirmLabel="Clear anomalies"
+        onConfirm={handleClearAll}
+        onCancel={() => setClearConfirmOpen(false)}
+        busy={clearing}
+      />
 
       {/* Summary Stats */}
       {summary && (

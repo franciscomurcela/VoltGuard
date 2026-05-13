@@ -1,4 +1,7 @@
-# Script de Seed Inteligente - Lê do .env para o Vault
+# AD-HOC USE ONLY. The vault-seeder service in docker-compose.yaml seeds Vault
+# automatically every time the stack starts. Run this script only to re-push
+# secrets between boots (e.g. you edited .env and don't want to recreate the
+# stack). Reads every KEY=VALUE pair from .env into secret/compositor.
 $ErrorActionPreference = "Stop"
 
 $VaultAddr = "http://127.0.0.1:8200"

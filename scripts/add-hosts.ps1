@@ -18,7 +18,8 @@ $VoltGuardHosts = @(
     "oam.voltguard.pt",
     "notifications.voltguard.pt",
     "anomaly.voltguard.pt",
-    "auth.voltguard.pt"
+    "auth.voltguard.pt",
+    "grafana.voltguard.pt"
 )
 
 $Added = 0

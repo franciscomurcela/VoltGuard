@@ -19,6 +19,7 @@ export async function loadVaultSecrets() {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
 
+  let keysLoaded = 0
   try {
     const res = await fetch(`${baseUrl}/v1/${secretPath}`, {
       headers: { 'X-Vault-Token': token },
@@ -37,10 +38,9 @@ export async function loadVaultSecrets() {
         process.env[key] = String(value)
       }
     }
+    keysLoaded = Object.keys(secrets).length
   } finally {
     clearTimeout(timeout)
   }
-  // No vault.js, logo após o loop de carregamento:
-  const anomalyKey = process.env.ANOMALY_APP_TOKEN || "MISSING";
-  console.log(`[Debug] Anomaly Token Check (First 4 chars): ${anomalyKey.substring(0, 4)}...`);
+  logger.info({ secretPath, keysLoaded }, 'Vault secrets loaded')
 }

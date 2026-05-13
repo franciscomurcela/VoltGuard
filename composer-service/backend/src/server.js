@@ -92,7 +92,7 @@ app.use(
 )
 
 // ─── Routes ─────────────────────────────────────────────────────────────────-
-// Health routes are public (no auth) — K8s probes need unauthenticated access
+// Health routes are public (no auth) — probes need unauthenticated access
 app.use('/api/health', healthRoutes)
 // Prometheus metrics endpoint (root path) — Prometheus will scrape this
 app.get('/metrics', metricsHandler)
@@ -164,7 +164,7 @@ export async function start() {
     }, `Compositor backend listening on :${PORT}`)
   })
 
-  // Graceful shutdown (K8s sends SIGTERM)
+  // Graceful shutdown on SIGTERM
   const shutdown = (signal) => {
     logger.info({ signal }, 'Shutting down...')
     clearInterval(purgeInterval)

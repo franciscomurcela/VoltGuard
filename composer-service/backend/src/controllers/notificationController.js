@@ -42,6 +42,21 @@ export async function send(req, res, next) {
 }
 
 /**
+ * DELETE /api/notifications  (admin only)
+ * Wipes every notification, digest entry, and audit record for this client.
+ * Demo/reset operation — requires the UI's double-confirmation.
+ */
+export async function clearNotifications(req, res, next) {
+  try {
+    const data = await notificationProxy.clearAllNotifications(req)
+    logger.warn({ result: data }, 'Notification history cleared by admin')
+    res.status(200).json(data)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
  * POST /api/notifications/digest/process  (admin only)
  * Manually triggers digest queue processing.
  * Body: { batch_size?: number, dry_run?: boolean }

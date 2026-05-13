@@ -28,7 +28,7 @@ tags:
   - name: Districts
     description: District-level aggregation for the heatmap
   - name: Health
-    description: Composite health and Kubernetes probes
+    description: Composite health and liveness/readiness probes
 
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
@@ -866,7 +866,7 @@ paths:
   /health/live:
     get:
       tags: [Health]
-      summary: Kubernetes liveness probe
+      summary: Liveness probe
       description: >
         No authentication required. Returns 200 if the Node.js process is
         running. Does not contact upstream services.
@@ -878,7 +878,7 @@ paths:
   /health/ready:
     get:
       tags: [Health]
-      summary: Kubernetes readiness probe
+      summary: Readiness probe
       description: >
         No authentication required. Returns 200 only if at least one upstream
         service is reachable. Returns 503 if all upstreams are down.

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.deps import verify_token
 from app.schemas import PaginatedAnomalyResponse, AnomalySummary, AnomalyDetail, SensorAnomalyAggregate, SensorAnomalyAggregateResponse
-from app.state import get_all_anomalies, get_anomaly, db_datasets
+from app.state import get_all_anomalies, get_anomaly, db_datasets, clear_all_anomalies
 
 logger = logging.getLogger("voltguard-api")
 router = APIRouter(tags=["2. Anomaly Registry"])
@@ -156,6 +156,15 @@ async def get_anomalies_by_sensor(
 
     items.sort(key=lambda item: item.anomalies_total, reverse=True)
     return SensorAnomalyAggregateResponse(items=items, total_sensors=len(items))
+
+
+@router.delete("/v1/anomalies", status_code=status.HTTP_200_OK)
+async def delete_all_anomalies(token: str = Depends(verify_token)):
+    """Demo/admin operation — wipes the entire anomaly store. Used to reset
+    state between demo runs."""
+    cleared = clear_all_anomalies()
+    logger.info(f"🧹 Limpeza completa de anomalias — {cleared} registos removidos")
+    return {"cleared": cleared}
 
 
 @router.get("/v1/anomalies/{anomaly_id}", response_model=AnomalyDetail)

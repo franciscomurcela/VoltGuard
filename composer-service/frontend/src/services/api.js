@@ -92,6 +92,7 @@ export const anomaliesApi = {
   getLatestForecast: (sensorId, params = {}) => api.get(`/anomalies/forecasts/latest/${sensorId}`, { params }),
   triggerAnalysis: (sensorId, data = {}) => api.post(`/anomalies/analysis/${sensorId}`, data, { timeout: 120000 }),
   getProcessingState: (sensorId) => api.get(`/anomalies/processing-state/${sensorId}`),
+  clearAll: () => api.delete('/anomalies'),
 }
 
 export const measurementsApi = {
@@ -113,6 +114,7 @@ export const notificationsApi = {
       headers: { 'Idempotency-Key': idempotencyKey },
     })
   },
+  clearAll: () => api.delete('/notifications'),
 }
 
 export const preferencesApi = {

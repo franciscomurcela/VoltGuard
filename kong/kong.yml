@@ -1,6 +1,20 @@
 _format_version: "2.1"
 _transform: true
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GLOBAL PLUGINS
+# Prometheus plugin exposes /metrics on the *status* listener (port 8100,
+# configured via KONG_STATUS_LISTEN in docker-compose). Prometheus scrapes
+# kong:8100/metrics — admin API stays loopback-only.
+# ─────────────────────────────────────────────────────────────────────────────
+plugins:
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
 services:
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -83,3 +97,17 @@ services:
       - name: auth
         hosts:
           - auth.voltguard.pt
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # GRAFANA — Observability UI
+  # grafana.voltguard.pt/* → grafana:3000
+  # preserve_host: true forwards the original Host header so Grafana's CSRF
+  # check (Origin must equal Host) succeeds when the SPA POSTs /api/ds/query.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - name: grafana
+    url: http://grafana:3000
+    routes:
+      - name: grafana
+        hosts:
+          - grafana.voltguard.pt
+        preserve_host: true

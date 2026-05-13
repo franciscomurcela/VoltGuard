@@ -44,6 +44,21 @@ export async function getAnomalies(req, params = {}) {
 }
 
 /**
+ * DELETE /v1/anomalies — wipe every anomaly from the anomaly service.
+ * Demo/admin operation. Returns { cleared: <count> }.
+ */
+export async function clearAllAnomalies(req) {
+  return withRetry(
+    async () => {
+      const url = getServiceUrl("anomaly", "/v1/anomalies");
+      const res = await client.delete(url, { headers: anomalyHeaders(req) });
+      return res.data;
+    },
+    { label: LABEL },
+  );
+}
+
+/**
  * GET /v1/anomalies/by-sensor — aggregate stats by source_id
  */
 export async function getAnomaliesBySensor(req, params = {}) {

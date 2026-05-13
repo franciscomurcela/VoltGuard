@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AD-HOC USE ONLY. The `vault-seeder` service in docker-compose.yaml seeds
+# Vault automatically every time the stack starts. Run this script only to
+# re-push secrets between boots (e.g. you edited .env and don't want to
+# `docker compose down/up`). Reads every KEY=VALUE pair from .env into
+# secret/compositor — including non-secret keys, which is fine for dev.
 set -euo pipefail
 
 # Configurações de Conexão

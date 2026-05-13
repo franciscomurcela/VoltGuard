@@ -95,6 +95,27 @@ paths:
                 items:
                   $ref: '#/components/schemas/NotificationResponse'
 
+    delete:
+      summary: Apagar todas as notificações de um cliente (demo/reset)
+      description: |
+        Operação destrutiva — remove TODAS as notificações, fila de digest e
+        registos de auditoria pertencentes ao client_id indicado. Pensado para
+        repor estado entre demonstrações; não para produção sem confirmação.
+      tags:
+        - Gestão de Notificações
+      operationId: v1_notifications_delete
+      x-openapi-router-controller: swagger_server.controllers.notifications_controller
+      parameters:
+        - name: client_id
+          in: query
+          description: ID do microsserviço dono dos registos a remover.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK - Contagens removidas de cada coleção.
+
   /v1/notifications/{id}:
     get:
       summary: Consultar estado de entrega específico

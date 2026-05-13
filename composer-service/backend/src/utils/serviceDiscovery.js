@@ -1,9 +1,9 @@
 import logger from './logger.js'
 
 // ─── Service Registry ───────────────────────────────────────────────────────
-// In Kubernetes, services are resolved via internal DNS:
-//   http://<service-name>.<namespace>.svc.cluster.local:<port>
-// For simplicity, we use env vars that K8s manifests populate.
+// Each peer service URL comes from an env var so the same image runs in any
+// environment (docker-compose, staging, prod). Defaults point at the dev
+// override ports so the backend works when launched outside its container.
 
 const services = {
   oam: {

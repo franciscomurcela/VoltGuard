@@ -3,8 +3,8 @@ import session from 'express-session'
 import logger from '../utils/logger.js'
 
 // ─── Session Store (required by keycloak-connect) ───────────────────────────
-// In production with K8s, replace with Redis-backed store
-// (e.g. connect-redis) so sessions survive pod restarts.
+// In production, replace with a Redis-backed store (e.g. connect-redis) so
+// sessions survive container restarts.
 const memoryStore = new session.MemoryStore()
 
 export const sessionMiddleware = session({

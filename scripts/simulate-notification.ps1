@@ -1,3 +1,6 @@
+# Manually triggers /api/anomalies/simulate-notification on compositor-backend.
+# Route is admin-only (requireRole('admin')). With AUTH_DISABLED=false (default)
+# you must pass -BearerToken or set AUTH_DISABLED=true in .env for dev runs.
 param(
   [string]$UserId = "op_joao_silva",
 
@@ -9,10 +12,15 @@ param(
   [string]$Severity = "HIGH",
   [ValidateSet("critical", "warnings")]
   [string]$AlertType = "critical",
-  [string]$MessageTemplate = ""
+  [string]$MessageTemplate = "",
+  [string]$BearerToken = ""
 )
 
 $uri = "$ApiBaseUrl/api/anomalies/simulate-notification"
+$headers = @{ "Content-Type" = "application/json" }
+if ($BearerToken -and $BearerToken.Trim().Length -gt 0) {
+  $headers["Authorization"] = "Bearer $BearerToken"
+}
 
 if ($UserId -match '^\d+$') {
   Write-Warning "UserId '$UserId' parece inválido para este ambiente. Exemplos válidos: op_joao_silva, op_maria_costa"
@@ -35,7 +43,7 @@ $body = $payload | ConvertTo-Json -Depth 5
 
 Write-Host "POST $uri" -ForegroundColor Cyan
 try {
-  Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body $body
+  Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body
 } catch {
   $resp = $_.Exception.Response
   $statusCode = $null

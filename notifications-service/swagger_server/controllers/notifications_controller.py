@@ -173,6 +173,20 @@ def v1_notifications_get(client_id, limit=25, offset=0):  # noqa: E501
     return items, 200
 
 
+def v1_notifications_delete(client_id):  # noqa: E501
+    """DELETE /v1/notifications — wipe every notification + digest queue entry
+    for a client. Demo/admin operation; used to reset state between runs."""
+    db = get_db()
+    notif_result = db.notifications.delete_many({'client_id': client_id})
+    digest_result = db.digest_queue.delete_many({'client_id': client_id})
+    audit_result = db.notification_audit.delete_many({'client_id': client_id})
+    return {
+        'notifications_deleted': notif_result.deleted_count,
+        'digest_deleted': digest_result.deleted_count,
+        'audit_deleted': audit_result.deleted_count,
+    }, 200
+
+
 def v1_notifications_post(body):  # noqa: E501
     """POST /v1/notifications — send a new notification."""
     db = get_db()

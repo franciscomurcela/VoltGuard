@@ -12,6 +12,7 @@ import {
   simulateAnomalyNotification,
   exportAnomalies,
   getSensorProcessingState,
+  clearAnomalies,
 } from '../controllers/anomalyController.js'
 import { listModels, getForecast } from '../controllers/measurementController.js'
 
@@ -50,5 +51,9 @@ router.get('/export', exportAnomalies)
 // Anomaly list and detail
 router.get('/', listAnomalies)
 router.get('/:id', getAnomaly)
+
+// Demo/reset — wipe every anomaly. Any authenticated user; the UI requires a
+// typed-DELETE confirmation. For production, tighten to requireRole('admin').
+router.delete('/', clearAnomalies)
 
 export default router

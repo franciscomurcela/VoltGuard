@@ -309,3 +309,15 @@ export async function simulateAnomalyNotification(req, res, next) {
     return next(err)
   }
 }
+
+
+// ─── Clear-all (demo reset) ─────────────────────────────────────────────────
+export async function clearAnomalies(req, res, next) {
+  try {
+    const data = await anomalyProxy.clearAllAnomalies(req)
+    logger.warn({ cleared: data?.cleared }, 'Anomaly history cleared by admin')
+    return res.status(200).json({ cleared: data?.cleared ?? 0 })
+  } catch (err) {
+    return next(err)
+  }
+}

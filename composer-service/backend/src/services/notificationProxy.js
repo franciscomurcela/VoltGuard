@@ -54,6 +54,21 @@ export async function sendNotification(req, notificationData) {
 }
 
 /**
+ * DELETE /v1/notifications — wipe every notification, digest queue entry,
+ * and audit record for this client. Demo/admin operation.
+ */
+export async function clearAllNotifications(req) {
+  return withRetry(async () => {
+    const url = getServiceUrl('notification', '/v1/notifications')
+    const res = await client.delete(url, {
+      headers: forwardHeaders(req),
+      params: { auth_token: AUTH_TOKEN, client_id: CLIENT_ID },
+    })
+    return res.data
+  }, { label: LABEL })
+}
+
+/**
  * POST /v1/digest/process — flush the digest queue
  * Called on a schedule by the compositor, and also available as a manual admin endpoint.
  * Does not need a req object — the notifications service authenticates via its own auth_token.

@@ -4,8 +4,8 @@ import { getAnomalyHealth } from '../services/anomalyProxy.js'
 import logger from '../utils/logger.js'
 
 // ─── Health Cache ────────────────────────────────────────────────────────────
-// K8s readiness probe fires every 10s. Without caching, that's 3 upstream
-// health calls every 10s just for probes. Cache results for 5s.
+// Readiness probes fire every 10s. Without caching, that's 3 upstream health
+// calls every 10s just for probes. Cache results for 5s.
 let healthCache = null
 let healthCacheTime = 0
 const HEALTH_CACHE_TTL = 5000
@@ -80,7 +80,7 @@ export async function liveness(req, res) {
 /**
  * GET /api/health/ready
  * Readiness probe — uses cached health so we don't hammer peers.
- * Keeps 503 behaviour since this is used by K8s, not the frontend.
+ * Keeps 503 behaviour since this is used by health probes, not the frontend.
  */
 export async function readiness(req, res) {
   try {

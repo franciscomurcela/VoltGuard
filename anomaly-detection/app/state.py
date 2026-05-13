@@ -281,6 +281,20 @@ def get_all_anomalies() -> List[Dict[str, Any]]:
     return list(_db_anomalies.values())
 
 
+def clear_all_anomalies() -> int:
+    """Wipe every anomaly from the in-memory store and the Mongo backing collection
+    (if Mongo is configured). Returns the number of in-memory records cleared."""
+    count = len(_db_anomalies)
+    _db_anomalies.clear()
+    collection = _get_collection("anomalies")
+    if collection is not None:
+        try:
+            collection.delete_many({})
+        except Exception as error:
+            logger.warning("⚠️ Falha ao limpar coleção 'anomalies' no Mongo: %s", error)
+    return count
+
+
 def get_all_forecasts() -> List[Dict[str, Any]]:
     return list(_db_forecasts.values())
 

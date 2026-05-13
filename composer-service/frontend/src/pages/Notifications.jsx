@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import useNotifications from '../hooks/useNotifications'
 import NotificationTable from '../components/notifications/NotificationTable'
+import ConfirmDialog from '../components/common/ConfirmDialog'
+import { notificationsApi } from '../services/api'
 
 // ─── Channel options derived from notificationProxy CLIENT_ID patterns ───────
 const CHANNELS = [
@@ -262,10 +264,27 @@ export default function Notifications() {
   } = useNotifications()
 
   const [showSendPanel, setShowSendPanel] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState(null)
 
   const handleDismissResult = () => {
     clearLastSent()
     clearSendError()
+  }
+
+  const handleClearAll = async () => {
+    setClearing(true)
+    setClearError(null)
+    try {
+      await notificationsApi.clearAll()
+      setClearConfirmOpen(false)
+      await refetch()
+    } catch (err) {
+      setClearError(err?.response?.data?.message || err.message || 'Failed to clear notifications')
+    } finally {
+      setClearing(false)
+    }
   }
 
   if (loading) {
@@ -306,6 +325,22 @@ export default function Notifications() {
             ↺ Refresh
           </button>
           <button
+            onClick={() => { setClearError(null); setClearConfirmOpen(true) }}
+            title="Wipe every notification + digest entry for this client"
+            style={{
+              padding: '9px 18px',
+              background: 'rgba(239,68,68,0.10)',
+              border: '1px solid rgba(239,68,68,0.30)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--accent-red)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            🗑 Clear All
+          </button>
+          <button
             onClick={() => {
               setShowSendPanel((v) => !v)
               handleDismissResult()
@@ -325,6 +360,32 @@ export default function Notifications() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title="Clear all notifications"
+        description={(
+          <>
+            <p style={{ margin: '0 0 12px' }}>
+              This wipes <strong>every notification</strong> sent by this client
+              (energy_composer), the digest queue, and the audit log.
+            </p>
+            <p style={{ margin: 0, color: 'var(--accent-red)' }}>
+              This cannot be undone. Anomaly records are not affected.
+            </p>
+            {clearError && (
+              <p style={{ marginTop: 12, color: 'var(--accent-red)', fontSize: 12 }}>
+                Error: {clearError}
+              </p>
+            )}
+          </>
+        )}
+        confirmPhrase="DELETE"
+        confirmLabel="Clear notifications"
+        onConfirm={handleClearAll}
+        onCancel={() => setClearConfirmOpen(false)}
+        busy={clearing}
+      />
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
