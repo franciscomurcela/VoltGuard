@@ -12,6 +12,8 @@ stringData:
   COMPOSITOR_SESSION_SECRET: "change-me-random-32-chars"
   NOTIFICATIONS_AUTH_TOKEN: "your_secure_auth_token"
   ANOMALY_APP_TOKEN: "token_do_composer_123"
+  OAM_DB_PASSWORD: "oam_pass"
+  DATABASE_URL: "postgres://oam_user:oam_pass@postgres-oam:5432/oam_db"
 
 ---
 # ═══════════════════════════════════════════════════════════════════════════
@@ -22,6 +24,30 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: compositor-data
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oam-postgres-data
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oam-firmware-storage
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
   accessModes: [ReadWriteOnce]
@@ -190,6 +216,141 @@ spec:
   ports:
     - port: 80
       targetPort: 80
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# OAM — Database (PostgreSQL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-oam
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres-oam
+  template:
+    metadata:
+      labels:
+        app: postgres-oam
+    spec:
+      containers:
+        - name: postgres-oam
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "oam_user"
+            - name: POSTGRES_DB
+              value: "oam_db"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: OAM_DB_PASSWORD
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: oam-postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "oam_user", "-d", "oam_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: oam-postgres-data
+          persistentVolumeClaim:
+            claimName: oam-postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-oam
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: postgres-oam
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# OAM — Service (Rust / Axum)
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oam-service
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: oam-service
+  template:
+    metadata:
+      labels:
+        app: oam-service
+    spec:
+      containers:
+        - name: oam-service
+          image: registry.deti/grupo4-egs-deti.ua.pt/oam-service:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVER_ADDR
+              value: "0.0.0.0:8080"
+            - name: FIRMWARE_STORAGE_PATH
+              value: "/app/firmware_storage"
+            - name: BASE_URL
+              value: "https://grupo4-egs-deti.ua.pt"
+            - name: RUST_LOG
+              value: "info"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: voltguard-secrets
+                  key: DATABASE_URL
+          volumeMounts:
+            - name: oam-firmware-storage
+              mountPath: /app/firmware_storage
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: oam-firmware-storage
+          persistentVolumeClaim:
+            claimName: oam-firmware-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oam-service
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  selector:
+    app: oam-service
+  ports:
+    - port: 8080
+      targetPort: 8080
 
 ---
 # ═══════════════════════════════════════════════════════════════════════════
