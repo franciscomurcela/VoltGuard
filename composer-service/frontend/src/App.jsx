@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import useAuth from './hooks/useAuth'
-import useMetrics from './hooks/useMetrics'
+import { ThemeProvider } from './contexts/ThemeContext'
 import Navbar from './components/layout/Navbar'
 import Footer from './components/layout/Footer'
 import Login from './pages/Login'
@@ -25,8 +25,6 @@ function ProtectedRoute({ children }) {
 
 // ─── App Layout (wraps authenticated pages) ─────────────────────────────────
 function AppLayout() {
-  const { serviceHealth } = useMetrics()
-
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Navbar />
@@ -39,7 +37,7 @@ function AppLayout() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <Footer serviceHealth={serviceHealth} />
+      <Footer />
     </div>
   )
 }
@@ -47,18 +45,20 @@ function AppLayout() {
 // ─── Root App ───────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/preferences" element={<Preferences />} />
-        <Route
-          path="*"
-          element={(
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          )}
-        />
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/preferences" element={<Preferences />} />
+          <Route
+            path="*"
+            element={(
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            )}
+          />
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }

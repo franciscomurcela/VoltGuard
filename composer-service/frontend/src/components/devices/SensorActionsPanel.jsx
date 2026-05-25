@@ -39,7 +39,7 @@ function ActionBtn({ label, sub, color, onClick, loading, disabled }) {
       disabled={disabled || loading}
       style={{
         padding: '10px 14px',
-        background: disabled ? 'rgba(255,255,255,0.02)' : `${color}0d`,
+        background: disabled ? 'var(--bg-interactive-disabled)' : `${color}0d`,
         border: `1px solid ${disabled ? 'var(--border-subtle)' : `${color}28`}`,
         borderRadius: 'var(--radius-md)',
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -203,7 +203,7 @@ function FirmwareUploadForm({ onDone, onCancel }) {
           disabled={!isValid || uploading}
           style={{
             padding: '6px 16px', fontSize: 12, fontWeight: 500,
-            background: !isValid ? 'rgba(255,255,255,0.04)' : 'linear-gradient(135deg,#0ea5e9,#0284c7)',
+            background: !isValid ? 'var(--bg-interactive-disabled)' : 'linear-gradient(135deg,#0ea5e9,#0284c7)',
             color: !isValid ? 'var(--text-faint)' : '#fff',
             border: 'none', borderRadius: 'var(--radius-sm)',
             cursor: !isValid ? 'not-allowed' : 'pointer',
@@ -243,7 +243,7 @@ function AnomalyStatsPanel({ sensorId }) {
     <div style={{
       padding: '16px 20px',
       borderTop: '1px solid var(--border-muted)',
-      background: 'rgba(255,255,255,0.008)',
+      background: 'var(--bg-surface)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div className="label" style={{ fontSize: 9 }}>Anomaly Analysis Stats</div>
@@ -596,7 +596,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
         padding: '14px 20px',
         borderBottom: '1px solid var(--border-muted)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: 'rgba(255,255,255,0.015)',
+        background: 'var(--bg-surface)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
@@ -669,7 +669,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
               padding: '10px 14px',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-md)',
-              background: 'rgba(255,255,255,0.01)',
+              background: 'var(--bg-surface)',
               display: 'grid',
               gap: 8,
             }}>
@@ -738,7 +738,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
                 padding: '10px 14px',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-md)',
-                background: 'rgba(255,255,255,0.01)',
+                background: 'var(--bg-surface)',
               }}>
                 <div className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)' }}>No active anomaly</div>
               </div>
@@ -757,7 +757,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
               padding: '10px 14px',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-md)',
-              background: 'rgba(255,255,255,0.01)',
+              background: 'var(--bg-surface)',
             }}>
               <div className="mono" style={{ fontSize: 11, color: 'var(--text-ghost)' }}>No firmwares available.</div>
               <div className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 3 }}>Upload one →</div>
@@ -890,7 +890,7 @@ export default function SensorActionsPanel({ device, onClose, onActionComplete }
       <div style={{
         padding: '10px 20px',
         borderTop: '1px solid var(--border-muted)',
-        background: 'rgba(255,255,255,0.005)',
+        background: 'var(--bg-surface)',
       }}>
         <span className="mono" style={{ fontSize: 10, color: 'var(--text-ghost)' }}>
           Reboot is delivered on the next keepalive · firmware update is staged and applied when the device reboots

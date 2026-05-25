@@ -93,7 +93,7 @@ export default function ModelConfig({ config, onSave }) {
           disabled={!hasChanges || saving}
           style={{
             padding: '8px 20px',
-            background: !hasChanges ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+            background: !hasChanges ? 'var(--bg-interactive-disabled)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
             borderRadius: 'var(--radius-md)',
             color: !hasChanges ? 'var(--text-ghost)' : '#fff',
             fontSize: 12,

@@ -2,7 +2,6 @@ import useMetrics from '../hooks/useMetrics'
 import useAnomalies from '../hooks/useAnomalies'
 import PortugalMap from '../components/map/PortugalMap'
 import StatCard from '../components/metrics/StatCard'
-import ServiceBadge from '../components/services/ServiceBadge'
 
 const DISTRICT_COLORS = {
   lisboa: '#ef4444',
@@ -15,7 +14,7 @@ const DISTRICT_COLORS = {
 }
 
 export default function Dashboard() {
-  const { metrics, districts, serviceHealth, sparklines, loading } = useMetrics()
+  const { metrics, districts, sparklines, loading } = useMetrics()
   const { anomalies, summary: anomalySummary } = useAnomalies()
 
   if (loading || !metrics) {
@@ -161,37 +160,8 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ─── SOA Services + Notifications ───────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {/* Service Mesh */}
-        <div className="card">
-          <div className="label" style={{ marginBottom: 16 }}>SOA Service Mesh</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <ServiceBadge
-              name="Compositor (self)"
-              status={serviceHealth?.compositor?.status}
-              latency={serviceHealth?.compositor?.latency}
-            />
-            <ServiceBadge
-              name="OAM Service"
-              status={serviceHealth?.oam?.status}
-              latency={serviceHealth?.oam?.latency}
-            />
-            <ServiceBadge
-              name="Notification Service"
-              status={serviceHealth?.notification?.status}
-              latency={serviceHealth?.notification?.latency}
-            />
-            <ServiceBadge
-              name="Anomaly Detection"
-              status={serviceHealth?.anomaly?.status}
-              latency={serviceHealth?.anomaly?.latency}
-            />
-          </div>
-        </div>
-
-        {/* Anomaly Summary */}
-        <div className="card">
+      {/* ─── Anomaly Summary ────────────────────────────────────────────── */}
+      <div className="card">
           <div className="label" style={{ marginBottom: 16 }}>Anomaly Detection Summary</div>
           {anomalySummary ? (
             <>
@@ -241,7 +211,6 @@ export default function Dashboard() {
           ) : (
             <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>No anomaly data available</div>
           )}
-        </div>
       </div>
     </div>
   )

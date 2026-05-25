@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { metricsApi, healthApi } from '../services/api'
+import { metricsApi } from '../services/api'
 
 // ─── Mock Data Generator (remove when backend is live) ──────────────────────
 function generateMockMetrics() {
@@ -61,17 +61,6 @@ function generateMockDistricts() {
   }))
 }
 
-function generateMockHealth() {
-  return {
-    compositor: { status: 'healthy', latency: 8 + Math.floor(Math.random() * 10) },
-    oam: { status: 'healthy', latency: 25 + Math.floor(Math.random() * 20) },
-    notification: { status: 'healthy', latency: 20 + Math.floor(Math.random() * 18) },
-    anomaly: {
-      status: Math.random() > 0.3 ? 'degraded' : 'healthy',
-      latency: 100 + Math.floor(Math.random() * 120),
-    },
-  }
-}
 
 function generateSparkline(length = 20) {
   // Start as a flat line in the middle — "waiting for data"
@@ -97,7 +86,6 @@ function pushSparkValue(arr, newValue) {
 export default function useMetrics() {
   const [metrics, setMetrics] = useState(null)
   const [districts, setDistricts] = useState([])
-  const [serviceHealth, setServiceHealth] = useState(null)
   const [sparklines, setSparklines] = useState({
     requests: generateSparkline(),
     firewall: generateSparkline(),
@@ -113,7 +101,6 @@ export default function useMetrics() {
       if (USE_MOCK) {
         setMetrics(generateMockMetrics())
         setDistricts(generateMockDistricts())
-        setServiceHealth(generateMockHealth())
         setSparklines((prev) => ({
           requests: pushSparkValue(prev.requests, 30000 + Math.floor(Math.random() * 15000)),
           firewall: pushSparkValue(prev.firewall, 1200 + Math.floor(Math.random() * 800)),
@@ -121,10 +108,9 @@ export default function useMetrics() {
           cache: pushSparkValue(prev.cache, 4000 + Math.floor(Math.random() * 4000)),
         }))
       } else {
-        const [metricsRes, districtsRes, healthRes] = await Promise.allSettled([
+        const [metricsRes, districtsRes] = await Promise.allSettled([
           metricsApi.getSummary(),
           metricsApi.getDistricts(),
-          healthApi.check(),
         ])
 
         if (metricsRes.status === 'fulfilled') {
@@ -138,21 +124,17 @@ export default function useMetrics() {
             id: d.id || d.name?.toLowerCase(),
             name: d.name,
             count: d.count ?? 0,
-            requests: d.count ?? 0, // Dashboard uses requests
-            rate: 0,                // OAM doesn't provide req/s per district
+            requests: d.count ?? 0,
+            rate: 0,
           }))
           setDistricts(normalized)
         }
 
-        if (healthRes.status === 'fulfilled') {
-          setServiceHealth(healthRes.value.data)
-        }
-
-        const failures = [metricsRes, districtsRes, healthRes].filter((r) => r.status === 'rejected')
-        if (failures.length > 0 && failures.length < 3) {
+        const failures = [metricsRes, districtsRes].filter((r) => r.status === 'rejected')
+        if (failures.length > 0 && failures.length < 2) {
           console.warn('[useMetrics] Partial fetch failure; keeping last known values', failures)
         }
-        if (failures.length === 3) {
+        if (failures.length === 2) {
           throw failures[0].reason || new Error('Metrics endpoints unavailable')
         }
       }
@@ -171,5 +153,5 @@ export default function useMetrics() {
     return () => clearInterval(intervalRef.current)
   }, [fetchAll])
 
-  return { metrics, districts, serviceHealth, sparklines, loading, error, refetch: fetchAll }
+  return { metrics, districts, sparklines, loading, error, refetch: fetchAll }
 }

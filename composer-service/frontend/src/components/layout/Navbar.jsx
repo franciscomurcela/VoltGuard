@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuth from '../../hooks/useAuth'
+import { useTheme } from '../../contexts/ThemeContext'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: '◈' },
@@ -10,8 +11,10 @@ const NAV_ITEMS = [
 
 export default function Navbar() {
   const { user, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
+  const isDark = theme === 'dark'
 
   return (
     <nav
@@ -91,24 +94,6 @@ export default function Navbar() {
 
       {/* Right: Session info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        {/* Keycloak realm badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--accent-green)',
-              boxShadow: '0 0 8px rgba(34,197,94,0.5)',
-            }}
-          />
-          <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-            Keycloak: {user?.realm || 'iot-compositor'}
-          </span>
-        </div>
-
-        <div style={{ width: 1, height: 20, background: 'var(--border-subtle)' }} />
-
         {/* User */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div
@@ -136,6 +121,41 @@ export default function Navbar() {
             </div>
           </div>
         </div>
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{
+            padding: '5px 8px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-faint)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {isDark ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          )}
+        </button>
 
         {/* Logout */}
         <button

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useTheme } from '../../contexts/ThemeContext'
 
 // ─── Real district boundaries extracted from GADM/Natural Earth GeoJSON ──────
 // Source: Portugal.json (ufoe/d3js-geojson), simplified to ~45 pts per district
@@ -49,8 +50,12 @@ function centroid(coords) {
   ]
 }
 
-function districtColor(count, maxCount) {
-  if (count === 0) return { fill: '#0d1520', stroke: '#1e293b' }
+function districtColor(count, maxCount, isDark) {
+  if (count === 0) {
+    return isDark
+      ? { fill: '#0d1520', stroke: '#1e293b' }
+      : { fill: '#e2e8f0', stroke: '#94a3b8' }
+  }
   const t = count / maxCount
   if (t > 0.65) return { fill: 'rgba(249,115,22,0.50)', stroke: 'rgba(249,115,22,0.90)' }
   if (t > 0.30) return { fill: 'rgba(14,165,233,0.40)', stroke: 'rgba(14,165,233,0.85)' }
@@ -59,6 +64,8 @@ function districtColor(count, maxCount) {
 
 export default function PortugalMap({ districts = [], onDistrictClick }) {
   const [hovered, setHovered] = useState(null)
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
 
   const { districtMap, maxCount } = useMemo(() => {
     const map = new Map(districts.map((d) => [d.id.toLowerCase(), d]))
@@ -72,7 +79,7 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
   return (
     <div style={{
       position: 'relative', width: '100%', height: '100%', minHeight: 480,
-      background: '#050a0f', borderRadius: 12, padding: 12,
+      background: isDark ? '#050a0f' : '#f0f4f8', borderRadius: 12, padding: 12,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', maxHeight: 480 }}>
@@ -91,7 +98,7 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
           const stats = districtMap.get(geo.id)
           const count = stats?.count ?? 0
           const isHov = hovered === geo.id
-          const { fill, stroke } = districtColor(count, maxCount)
+          const { fill, stroke } = districtColor(count, maxCount, isDark)
           const path = polygonToPath(geo.polygon)
           const [cx, cy] = centroid(geo.polygon)
 
@@ -106,7 +113,7 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
                 <path d={path} fill={fill} stroke="none"
                   opacity={isHov ? 0.6 : 0.25} filter="url(#glow)" />
               )}
-              <path d={path} fill={isHov ? (count > 0 ? fill : 'rgba(255,255,255,0.05)') : fill}
+              <path d={path} fill={isHov ? (count > 0 ? fill : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)')) : fill}
                 stroke={stroke} strokeWidth={isHov ? 1.2 : 0.6}
                 style={{ transition: 'all 0.2s ease' }} />
               {count > 0 && (
@@ -128,7 +135,7 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
         {hovered && hoveredGeo && (() => {
           const [cx, cy] = centroid(hoveredGeo.polygon)
           return (
-            <text x={cx} y={cy - 10} textAnchor="middle" fill="white"
+            <text x={cx} y={cy - 10} textAnchor="middle" fill={isDark ? 'white' : '#1e293b'}
               fontSize="8" fontFamily="var(--font-mono)" fontWeight="600"
               style={{ pointerEvents: 'none', userSelect: 'none' }}>
               {hoveredGeo.name}
@@ -140,16 +147,19 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
       {hovered && hoveredGeo && hoveredStats && (
         <div style={{
           position: 'absolute', top: 16, left: 16,
-          background: 'rgba(0,10,20,0.88)', backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(14,165,233,0.25)',
+          background: isDark ? 'rgba(0,10,20,0.88)' : 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(12px)',
+          border: isDark ? '1px solid rgba(14,165,233,0.25)' : '1px solid rgba(0,0,0,0.10)',
           padding: '10px 14px', borderRadius: 8, pointerEvents: 'none',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.6)' : '0 4px 16px rgba(0,0,0,0.12)',
         }}>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)',
-            letterSpacing: 1.5, textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+          <div style={{
+            fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
+            color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+          }}>
             District
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginTop: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: isDark ? 'white' : '#111827' }}>
             {hoveredGeo.name}
           </div>
           <div style={{ marginTop: 5, color: 'var(--accent-blue)',
@@ -163,7 +173,8 @@ export default function PortugalMap({ districts = [], onDistrictClick }) {
         <div style={{
           position: 'absolute', bottom: 16, right: 16,
           fontFamily: 'var(--font-mono)', fontSize: 9,
-          color: 'rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 1,
+          color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.30)',
+          textTransform: 'uppercase', letterSpacing: 1,
         }}>
           Hover district for details
         </div>

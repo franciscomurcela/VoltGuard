@@ -68,6 +68,23 @@ spec:
 
 ---
 # ═══════════════════════════════════════════════════════════════════════════
+# HOSTS OVERRIDE — ConfigMap
+# Injects the correct IP for grupo4-egs-deti.ua.pt into pods that need to
+# reach Keycloak over HTTPS. Required because cluster DNS resolves the
+# hostname to the wrong IP (server-side misconfiguration).
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hosts-override
+  namespace: tenant-grupo4-egs-deti-ua-pt
+data:
+  hosts-entry: |
+    193.136.82.35 grupo4-egs-deti.ua.pt
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
 # COMPOSITOR — Backend
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -209,7 +226,7 @@ metadata:
   name: grupo4-compositor-frontend
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: grupo4-compositor-frontend
@@ -220,7 +237,7 @@ spec:
     spec:
       containers:
         - name: compositor-frontend
-          image: registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v1
+          image: registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v4
           imagePullPolicy: Always
           ports:
             - containerPort: 80

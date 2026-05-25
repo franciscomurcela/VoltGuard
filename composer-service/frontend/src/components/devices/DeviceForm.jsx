@@ -92,7 +92,7 @@ export default function DeviceForm({ onSubmit, onCancel }) {
           disabled={!isValid || submitting}
           style={{
             padding: '9px 24px',
-            background: !isValid ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+            background: !isValid ? 'var(--bg-interactive-disabled)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
             borderRadius: 'var(--radius-md)',
             color: !isValid ? 'var(--text-faint)' : '#fff',
             fontSize: 13,
