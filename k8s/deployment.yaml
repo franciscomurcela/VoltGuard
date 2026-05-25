@@ -241,6 +241,13 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
           readinessProbe:
             httpGet:
               path: /
@@ -1027,7 +1034,7 @@ metadata:
   name: grupo4-kong
   namespace: tenant-grupo4-egs-deti-ua-pt
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: grupo4-kong
@@ -1042,6 +1049,13 @@ spec:
           ports:
             - containerPort: 8000
             - containerPort: 8001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: KONG_DATABASE
               value: "off"
@@ -1109,3 +1123,77 @@ spec:
                 name: kong
                 port:
                   number: 8000
+
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# HORIZONTAL POD AUTOSCALERS
+# Scale up when CPU exceeds target, scale down after 60s cooldown.
+# Requires resource requests to be defined on containers (above).
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: compositor-frontend-hpa
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: grupo4-compositor-frontend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 3
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kong-hpa
+  namespace: tenant-grupo4-egs-deti-ua-pt
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: grupo4-kong
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 3
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
