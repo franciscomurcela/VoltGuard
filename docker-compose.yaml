@@ -101,6 +101,8 @@ services:
       VAULT_TOKEN: dev-root
       NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
       ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
+      VG_APP_TOKEN: ${VG_APP_TOKEN:-token_do_composer_123}
+      VG_ADMIN_TOKEN: ${VG_ADMIN_TOKEN:-token_admin_999}
       COMPOSITOR_KC_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
       SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
@@ -117,6 +119,8 @@ services:
         vault kv put secret/compositor \
           NOTIFICATIONS_AUTH_TOKEN="$$NOTIFICATIONS_AUTH_TOKEN" \
           ANOMALY_APP_TOKEN="$$ANOMALY_APP_TOKEN" \
+          VG_APP_TOKEN="$$VG_APP_TOKEN" \
+          VG_ADMIN_TOKEN="$$VG_ADMIN_TOKEN" \
           COMPOSITOR_KC_SECRET="$$COMPOSITOR_KC_SECRET" \
           SESSION_SECRET="$$SESSION_SECRET" \
           SMTP_PASSWORD="$$SMTP_PASSWORD" \
@@ -356,10 +360,44 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: voltguard-anomaly-api
-    env_file:
-      - ./anomaly-detection/.env
     environment:
-      VG_MONGO_URI: ""
+      VG_MONGO_URI: ${VG_MONGO_URI:-}
+      VG_MONGO_DB: ${VG_MONGO_DB:-voltguard}
+      VG_PERIODIC_INGESTION_ENABLED: ${VG_PERIODIC_INGESTION_ENABLED:-0}
+      VG_INGESTION_INTERVAL_SECONDS: ${VG_INGESTION_INTERVAL_SECONDS:-60}
+      VG_INGESTION_MODE: ${VG_INGESTION_MODE:-composer_push}
+      VG_DATASET_1_URL: ${VG_DATASET_1_URL:-https://archive.ics.uci.edu/static/public/235/individual+household+electric+power+consumption.zip}
+      VG_DATASET_1_SOURCE_ID: ${VG_DATASET_1_SOURCE_ID:-sensor_periodic_uci_household}
+      VG_DATASET_1_METRIC_NAME: ${VG_DATASET_1_METRIC_NAME:-global_active_power}
+      VG_DATASET_1_TIMESTAMP_COLUMN: ${VG_DATASET_1_TIMESTAMP_COLUMN:-}
+      VG_DATASET_1_TIMESTAMP_FORMAT: ${VG_DATASET_1_TIMESTAMP_FORMAT:-%d/%m/%Y %H:%M:%S}
+      VG_DATASET_1_DATE_COLUMN: ${VG_DATASET_1_DATE_COLUMN:-Date}
+      VG_DATASET_1_TIME_COLUMN: ${VG_DATASET_1_TIME_COLUMN:-Time}
+      VG_DATASET_1_VALUE_COLUMN: ${VG_DATASET_1_VALUE_COLUMN:-Global_active_power}
+      VG_DATASET_1_DELIMITER: ${VG_DATASET_1_DELIMITER:-;}
+      VG_DATASET_1_TEMPORAL_MODE: ${VG_DATASET_1_TEMPORAL_MODE:-hourly}
+      VG_DATASET_1_AGGREGATION: ${VG_DATASET_1_AGGREGATION:-none}
+      VG_DATASET_1_MAX_ROWS: ${VG_DATASET_1_MAX_ROWS:-1000}
+      VG_DATASET_2_URL: ${VG_DATASET_2_URL:-https://raw.githubusercontent.com/jenfly/opsd/master/opsd_germany_daily.csv}
+      VG_DATASET_2_SOURCE_ID: ${VG_DATASET_2_SOURCE_ID:-sensor_periodic_opsd}
+      VG_DATASET_2_METRIC_NAME: ${VG_DATASET_2_METRIC_NAME:-consumption}
+      VG_DATASET_2_TIMESTAMP_COLUMN: ${VG_DATASET_2_TIMESTAMP_COLUMN:-Date}
+      VG_DATASET_2_VALUE_COLUMN: ${VG_DATASET_2_VALUE_COLUMN:-Consumption}
+      VG_DATASET_2_DELIMITER: ${VG_DATASET_2_DELIMITER:-}
+      VG_DATASET_2_TEMPORAL_MODE: ${VG_DATASET_2_TEMPORAL_MODE:-daily}
+      VG_DATASET_2_AGGREGATION: ${VG_DATASET_2_AGGREGATION:-mean}
+      VG_DATASET_2_MAX_ROWS: ${VG_DATASET_2_MAX_ROWS:-0}
+      VG_COMPOSER_BASE_URL: ${VG_COMPOSER_BASE_URL:-http://compositor-backend:8080}
+      VG_COMPOSER_SENSORS_PATH: ${VG_COMPOSER_SENSORS_PATH:-/v1/sensors}
+      VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE: ${VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE:-/v1/sensors/{sensor_id}/measurements?limit={limit}}
+      VG_COMPOSER_DATASETS_POST_PATH: ${VG_COMPOSER_DATASETS_POST_PATH:-/v1/anomalies/datasets/push}
+      VG_COMPOSER_TIMEOUT_SECONDS: ${VG_COMPOSER_TIMEOUT_SECONDS:-20}
+      VG_COMPOSER_TOKEN: ${VG_COMPOSER_TOKEN:-}
+      VG_COMPOSER_WEBHOOK_URL: ${VG_COMPOSER_WEBHOOK_URL:-http://compositor-backend:8080/api/webhooks/anomaly}
+      VG_COMPOSER_MEASUREMENTS_LIMIT: ${VG_COMPOSER_MEASUREMENTS_LIMIT:-500}
+      VG_DEFAULT_METRIC_NAME: ${VG_DEFAULT_METRIC_NAME:-voltage}
+      VG_APP_TOKEN: ${VG_APP_TOKEN:-token_do_composer_123}
+      VG_ADMIN_TOKEN: ${VG_ADMIN_TOKEN:-token_admin_999}
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: dev-root
       VAULT_SECRET_PATH: secret/data/compositor

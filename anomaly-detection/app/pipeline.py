@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional
+import asyncio
 import importlib
 from datetime import datetime
 import random
@@ -104,7 +105,8 @@ def _parse_csv_points(
             read_kwargs["sep"] = None
 
         df = pd.read_csv(io.StringIO(csv_text), **read_kwargs)
-    except Exception:
+    except Exception as csv_error:
+        logger.error("Erro ao fazer o parse do CSV: %s", csv_error)
         return []
 
     if df.empty:
@@ -291,11 +293,11 @@ async def _analyze_measurement_with_prophet(
             yearly_seasonality=False,
             mcmc_samples=0,
         )
-        model.fit(train_df)
+        await asyncio.to_thread(model.fit, train_df)
 
         save_trained_model(source_id, metric_name, model)
 
-        forecast = model.predict(validation_df[["ds"]])
+        forecast = await asyncio.to_thread(model.predict, validation_df[["ds"]])
         anomalies_detected = 0
 
         for idx, row in forecast.iterrows():
