@@ -89,33 +89,24 @@ kubectl get events -n tenant-grupo4-egs-deti-ua-pt --field-selector involvedObje
 
 ---
 
-## Step 3 — Run the stress test (Terminal 6)
+## Step 3 — Run the stress test (your local machine)
 
 One test that shows **load balancing + auto-scaling simultaneously**:
 
 ```bash
-kubectl run ab-test --image=httpd:alpine --rm -it --restart=Never -n tenant-grupo4-egs-deti-ua-pt -- ab -n 100000 -c 200 -H "Host: grupo4-egs-deti.ua.pt" http://kong:8000/
+ab -n 100000 -c 200 http://grupo4-egs-deti.ua.pt/
 ```
 
 ### Command breakdown
 
-**`kubectl run ab-test`** — creates a temporary pod inside the cluster.  
-Why inside the cluster? Traffic hits the **Kong Service directly** via kube-proxy, which properly distributes across both Kong pods. Running `ab` from outside (port-forward) tunnels through only one pod.
+Run directly from your laptop — no port-forward, no in-cluster pod needed.  
+Port 80 is open, Kong handles HTTP, and the response includes `Via: kong/3.7.1` confirming every request passes through Kong.
 
 | Flag | Meaning |
 |------|---------|
-| `--image=httpd:alpine` | Apache HTTP server image — includes `ab` built in |
-| `--rm` | Deletes the pod automatically when the command finishes |
-| `--restart=Never` | Runs as a one-shot job, not a long-lived deployment |
-| `-it` | Streams `ab` output to your terminal in real time |
-| `-n tenant-grupo4-egs-deti-ua-pt` | Inside the namespace — can reach internal services |
-
-| ab Flag | Meaning |
-|---------|---------|
 | `-n 100000` | 100k requests — run lasts 60+ seconds, giving HPA time to observe and react |
 | `-c 200` | 200 concurrent connections — pushes CPU past the HPA threshold |
-| `-H "Host: ..."` | Tells Kong which route to match |
-| `http://kong:8000/` | Internal Kong Service DNS — only reachable from inside the cluster |
+| `http://grupo4-egs-deti.ua.pt/` | Public URL — goes through Ingress → Kong → Frontend, real traffic path |
 
 ### What to narrate while ab is running
 
@@ -182,7 +173,7 @@ kubectl delete pod <pod-name> -n tenant-grupo4-egs-deti-ua-pt
 Point at Terminal 3 — the pod disappears. Then immediately run traffic:
 
 ```bash
-kubectl run ab-test --image=httpd:alpine --rm -it --restart=Never -n tenant-grupo4-egs-deti-ua-pt -- ab -n 5000 -c 50 -H "Host: grupo4-egs-deti.ua.pt" http://kong:8000/
+ab -n 5000 -c 50 http://grupo4-egs-deti.ua.pt/
 ```
 
 Say: *"One pod gone — zero failed requests. Kong rerouted everything to the surviving pod instantly."*
@@ -207,9 +198,6 @@ Say: *"And there it is — the system healed itself. No human action, no downtim
 ## Cleanup — Run after every test
 
 ```bash
-# Remove stuck ab-test pod (if a run was interrupted)
-kubectl delete pod ab-test -n tenant-grupo4-egs-deti-ua-pt --ignore-not-found
-
 # Restore frontend to 2 replicas if resilience demo left it at 1
 kubectl scale deployment grupo4-compositor-frontend --replicas=2 -n tenant-grupo4-egs-deti-ua-pt
 
@@ -232,7 +220,6 @@ kubectl get pods -n tenant-grupo4-egs-deti-ua-pt
 | `kubectl rollout restart deployment/<name> -n tenant-grupo4-egs-deti-ua-pt` | Clean pod logs before demo |
 | `kubectl rollout status deployment/<name> -n tenant-grupo4-egs-deti-ua-pt` | Wait for rollout to finish |
 | `kubectl scale deployment/<name> --replicas=N -n tenant-grupo4-egs-deti-ua-pt` | Manually scale up/down |
-| `kubectl delete pod ab-test -n tenant-grupo4-egs-deti-ua-pt --ignore-not-found` | Remove stuck ab-test pod |
 | `kubectl logs -f -l app=<label> -n tenant-grupo4-egs-deti-ua-pt --max-log-requests=10` | Stream logs from all pods with a label |
 | `watch -n 2 kubectl get hpa -n tenant-grupo4-egs-deti-ua-pt` | Live HPA status every 2s |
 | `kubectl get events -n tenant-grupo4-egs-deti-ua-pt --field-selector involvedObject.kind=HorizontalPodAutoscaler --watch` | Stream HPA scaling decisions |
