@@ -15,6 +15,9 @@
 # Kubernetes secrets (real values — copy from k8s/secrets.yaml.example)
 k8s/secrets.yaml
 
+# Local Kubernetes backups (may contain secrets)
+backup-*.yaml
+
 # Local docker-compose override (dev-only host port exposures)
 docker-compose.override.yaml
 docker-compose.override.yml
