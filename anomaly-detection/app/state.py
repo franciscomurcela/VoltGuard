@@ -317,6 +317,19 @@ def get_latest_forecast(sensor_id: str, metric_name: Optional[str] = None) -> Op
 # In-memory operational stores
 _db_webhooks: Dict[str, Any] = {}
 _db_tokens = {"token_do_composer_123": "Energy Composer", "token_admin_999": "Admin Service"}
+
+
+def refresh_tokens_from_env() -> None:
+    app_token = os.getenv("VG_APP_TOKEN", "").strip()
+    admin_token = os.getenv("VG_ADMIN_TOKEN", "").strip()
+    if not app_token and not admin_token:
+        return
+
+    _db_tokens.clear()
+    if app_token:
+        _db_tokens[app_token] = "Energy Composer"
+    if admin_token and admin_token not in _db_tokens:
+        _db_tokens[admin_token] = "Admin Service"
 _db_datasets: Dict[str, Any] = {}
 _db_trained_models: Dict[str, Any] = {}
 _db_trained_model_docs: Dict[str, Dict[str, Any]] = {}

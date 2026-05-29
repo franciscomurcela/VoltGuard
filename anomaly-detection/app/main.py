@@ -9,7 +9,7 @@ from app.routers.measurements import router as measurements_router
 from app.routers.anomalies import router as anomalies_router
 from app.routers.models import router as models_router
 from app.routers.webhooks import router as webhooks_router
-from app.state import init_persistence
+from app.state import init_persistence, refresh_tokens_from_env
 from app.routers.ingestion import router as ingestion_router
 from app.ingestion import periodic_ingestion_service
 from .vault_loader import load_vault_secrets
@@ -49,6 +49,7 @@ openapi_tags = [
 ]
 
 load_vault_secrets()
+refresh_tokens_from_env()
 
 app = FastAPI(
     title="VoltGuard - Anomalies Detection API",

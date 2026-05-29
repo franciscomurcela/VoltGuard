@@ -97,6 +97,7 @@ services:
       - name: auth
         hosts:
           - auth.voltguard.pt
+        preserve_host: true
 
   # ─────────────────────────────────────────────────────────────────────────────
   # GRAFANA — Observability UI
