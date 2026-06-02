@@ -237,7 +237,7 @@ spec:
     spec:
       containers:
         - name: compositor-frontend
-          image: registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v4
+          image: registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v5
           imagePullPolicy: Always
           ports:
             - containerPort: 80
