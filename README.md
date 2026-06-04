@@ -2,6 +2,39 @@
 
 IoT energy monitoring platform developed for the EGS course. Monitors electrical sensors across Portuguese districts, detects anomalies via machine learning, and delivers real-time notifications.
 
+## Project Structure
+
+```
+VoltGuard/
+├── composer-service/
+│   ├── backend/            Node.js / Express SOA gateway
+│   ├── frontend/           React + Vite SPA (dashboard)
+│   ├── infra/keycloak/     Keycloak realm configuration
+│   └── mock-peers/         Mock peer services for local dev
+├── oam-service/            Rust / Axum sensor management service
+├── anomaly-detection/      Python / FastAPI ML anomaly detection
+├── notifications-service/  Python / Connexion alerting gateway
+├── sensor-simulator/       Synthetic sensor data generator
+├── k8s/
+│   ├── deployment.yaml     All production Kubernetes workloads
+│   ├── observability.yaml  Prometheus + Grafana stack
+│   ├── secrets.yaml.example  Template — copy and fill before deploying
+│   └── secrets.yaml        (gitignored — never committed)
+├── kong/
+│   └── kong.yml            DB-less gateway declarative config
+├── infra/observability/    Local Prometheus + Grafana config (docker-compose)
+├── docs/
+│   ├── report.tex          LaTeX source for the project report
+│   ├── Diagram.png         High-level architecture diagram
+│   └── *.png               Screenshots used in the report
+├── scripts/vault/          Vault secret seeding scripts
+├── docker-compose.yaml     Local development stack
+├── env.example             Environment variable template
+└── Makefile
+```
+
+---
+
 ## Architecture
 
 ```

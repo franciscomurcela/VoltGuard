@@ -300,7 +300,7 @@ The OAM service is written in \textbf{Rust} using the \textbf{Axum} web framewor
 The service uses a \textbf{PostgreSQL 17} database managed by SQLx migrations. Persistent state includes:
 
 \begin{itemize}[noitemsep]
-  \item \textbf{Sensors} — unique identifier, location (district), firmware version, last-seen timestamp.
+  \item \textbf{Sensors} — unique identifier, location, firmware version, last-seen timestamp.
   \item \textbf{Firmware} — binary blobs stored on a persistent volume, with version metadata and checksum.
   \item \textbf{Keepalives} — timestamped heartbeat records used to detect sensor offline events.
 \end{itemize}
@@ -567,7 +567,8 @@ This generates 100,000 requests with a concurrency of 200. Under this load:
 Scaling events can be monitored live:
 
 \begin{lstlisting}[language=bash, caption=Monitor HPA scaling events]
-kubectl get hpa -n tenant-grupo4-egs-deti-ua-pt --watch
+kubectl get events -n tenant-grupo4-egs-deti-ua-pt \
+  --field-selector involvedObject.kind=HorizontalPodAutoscaler --watch
 \end{lstlisting}
 
 \begin{figure}[H]
@@ -584,7 +585,7 @@ kubectl get hpa -n tenant-grupo4-egs-deti-ua-pt --watch
 \label{fig:creating-pods}
 \end{figure}
 
-\begin{figure}[H]A
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{logs_pods.png}
 \caption{HPA event stream: both HPAs scale up to 5 replicas under load, then step back down to 2--4 as CPU drops below target.}
@@ -593,25 +594,7 @@ kubectl get hpa -n tenant-grupo4-egs-deti-ua-pt --watch
 
 \section{Resilience Testing}
 
-To validate that the platform tolerates pod failures during live traffic, a resilience test was performed with simultaneous pod termination under load.
-
-\subsection{Procedure}
-
-\textbf{Terminal 1 — apply sustained load:}
-\begin{lstlisting}[language=bash, caption=Resilience test load]
-ab -n 5000 -c 50 http://grupo4-egs-deti.ua.pt/
-\end{lstlisting}
-
-\textbf{Terminal 2 — watch pod states and kill a Frontend pod:}
-\begin{lstlisting}[language=bash, caption=Watch pod lifecycle and simulate pod failure]
-# Watch pod state changes in real time
-kubectl get pods -n tenant-grupo4-egs-deti-ua-pt --watch
-
-# In the same or a separate pane: terminate a Frontend pod
-kubectl delete pod <composer-frontend-pod-name> -n tenant-grupo4-egs-deti-ua-pt
-\end{lstlisting}
-
-\subsection{Observed Behaviour}
+To validate that the platform tolerates pod failures during live traffic, a resilience test was performed with simultaneous pod termination under load. The terminal captures below show the full lifecycle as it happened.
 
 Upon pod deletion:
 
