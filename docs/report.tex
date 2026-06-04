@@ -85,6 +85,7 @@
 \fancyhead[R]{\small\textcolor{gray}{Grupo 4}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
 
 % ── Callout box ─────────────────────────────────────────────
 \newmdenv[
@@ -125,7 +126,7 @@
 
 \begin{center}
 \renewcommand{\arraystretch}{1.5}
-\begin{tabularx}{0.95\textwidth}{l c X}
+\begin{tabularx}{0.95\textwidth}{l c >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{Name} & \textbf{Student Number} & \textbf{Main Contribution} \\
 \midrule
@@ -213,7 +214,7 @@ Service-to-service calls use internal Kubernetes DNS and never traverse the publ
 \caption{Technology stack per service}
 \label{tab:tech}
 \renewcommand{\arraystretch}{1.3}
-\begin{tabularx}{\textwidth}{l l X}
+\begin{tabularx}{\textwidth}{l l >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{Component} & \textbf{Stack} & \textbf{Rationale} \\
 \midrule
@@ -583,7 +584,7 @@ kubectl get hpa -n tenant-grupo4-egs-deti-ua-pt --watch
 \label{fig:creating-pods}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[H]A
 \centering
 \includegraphics[width=\textwidth]{logs_pods.png}
 \caption{HPA event stream: both HPAs scale up to 5 replicas under load, then step back down to 2--4 as CPU drops below target.}
@@ -616,7 +617,7 @@ Upon pod deletion:
 
 \begin{enumerate}[noitemsep]
   \item The deleted pod transitions to \texttt{Terminating}.
-  \item Kubernetes immediately begins scheduling a replacement pod (\texttt{ContainerCreating}).
+  \item Kubernetes immediately schedules a replacement pod, which enters \texttt{ContainerCreating} state.
   \item The surviving Frontend replica continues serving requests.
   \item The replacement pod reaches \texttt{Running} within approximately 10--20 seconds.
   \item The HPA re-evaluates and restores the desired replica count.
