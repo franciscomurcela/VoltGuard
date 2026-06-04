@@ -183,7 +183,7 @@ VoltGuard is an end-to-end IoT energy monitoring platform that turns raw sensor 
 
 \begin{callout}
 \textbf{Monitor} — Centralised, real-time ingestion of electrical measurements from all connected sensors in a single dashboard. \\
-\textbf{Detect} — Automatic anomaly detection using time-series forecasting (Prophet) and outlier scoring (PyOD), with no manual threshold configuration. \\
+\textbf{Detect} — Automatic anomaly detection using time-series forecasting (Prophet), with no manual threshold configuration. \\
 \textbf{Respond} — Immediate multi-channel alerting (email, SMS, WhatsApp) to the right person the moment an anomaly is confirmed.
 \end{callout}
 
@@ -217,10 +217,10 @@ Service-to-service calls use internal Kubernetes DNS and never traverse the publ
 \toprule
 \textbf{Component} & \textbf{Stack} & \textbf{Rationale} \\
 \midrule
-Compositor Frontend  & React + Vite       & Component-driven SPA with fast HMR for development \\
-Compositor Backend   & Node.js / Express  & Lightweight SOA gateway; rich ecosystem for HTTP proxying \\
+Composer Frontend  & React + Vite       & Component-driven SPA with fast HMR for development \\
+Composer Backend   & Node.js / Express  & Lightweight SOA gateway; rich ecosystem for HTTP proxying \\
 OAM Service          & Rust / Axum / SQLx & Memory safety and throughput for sensor inventory operations \\
-Anomaly Detection    & Python / FastAPI   & Native ecosystem for ML libraries (Prophet, PyOD) \\
+Anomaly Detection    & Python / FastAPI   & Native ecosystem for ML libraries (Prophet) \\
 Notifications        & Python / Connexion & OpenAPI-first design enforced by the Connexion framework \\
 API Gateway          & Kong 3.7 (DB-less) & Declarative config, zero-DB overhead, native K8s support \\
 Authentication       & Keycloak 25        & Standards-compliant OIDC with PKCE; battle-tested in production \\
@@ -235,19 +235,19 @@ Orchestration        & Kubernetes         & Self-healing pods, HPA, declarative 
 \begin{itemize}[noitemsep]
   \item \textbf{Client → Kong}: HTTPS termination at the university Ingress Controller; Kong receives plain HTTP on port 8000.
   \item \textbf{Kong → Services}: Internal Kubernetes DNS .
-  \item \textbf{Compositor Backend → Peers}: Proxied REST calls with configurable timeout, retry count, and backoff.
+  \item \textbf{Composer Backend → Peers}: Proxied REST calls with configurable timeout, retry count, and backoff.
   \item \textbf{Anomaly → Notifications}: Direct internal HTTP POST when an anomaly is confirmed.
   \item \textbf{Prometheus → Services}: Pull-based scrape every 15 seconds against each service's \texttt{/metrics} endpoint.
 \end{itemize}
 
 % ============================================================
-\chapter{Compositor Service}
-\label{ch:compositor}
+\chapter{Composer Service}
+\label{ch:composer}
 % ============================================================
 
 \section{Overview}
 
-The Compositor Service is the user-facing core of VoltGuard. It consists of two sub-components: a \textbf{React frontend} that provides the operator dashboard, and a \textbf{Node.js backend} that acts as a Service-Oriented Architecture (SOA) gateway — aggregating and normalising data from all peer microservices before presenting it to the client.
+The Composer Service is the user-facing core of VoltGuard. It consists of two sub-components: a \textbf{React frontend} that provides the operator dashboard, and a \textbf{Node.js backend} that acts as a Service-Oriented Architecture (SOA) gateway — aggregating and normalising data from all peer microservices before presenting it to the client.
 
 \section{Frontend}
 
@@ -344,23 +344,32 @@ The Anomaly Detection service is the intelligence layer of VoltGuard. It ingests
 
 \section{Machine Learning Pipeline}
 
-The pipeline uses two complementary approaches:
+The pipeline uses a robust time-series forecasting approach:
 
 \begin{itemize}
-  \item \textbf{Prophet} (Meta / Facebook) - a decomposable time-series forecasting model that captures trend and seasonality. Given a sensor's historical readings, Prophet produces a confidence interval for the expected next value. Readings outside the interval are flagged as anomalies.
-
-  \item \textbf{PyOD} - a Python library for outlier detection. Used as a secondary scorer to catch point anomalies that fall within Prophet's interval but are statistically unusual relative to the sensor's recent distribution.
+  \item \textbf{Prophet} (Meta / Facebook) - a decomposable time-series forecasting model that captures trend and seasonality. The pipeline splits incoming datasets using an \textbf{80/20 rule}: 80\% of the historical data is used to train the model and establish the baseline, while the remaining 20\% is then used for validation and \textbf{historical anomaly detection}, where any readings falling outside the generated confidence interval are flagged.
 \end{itemize}
 
-A reading is escalated to the Notifications service only if \emph{both} models agree it is anomalous, reducing false-positive noise.
+A reading is escalated to the Notifications service only if it falls outside the established Prophet confidence interval, ensuring proactive anomaly detection.
+
+\subsection*{Future Forecasting}
+
+Beyond historical analysis, the persisted Prophet model unlocks proactive capabilities. The System can generate on-demand \textbf{forecasts} to project future energy consumption. This allows facility managers to anticipate energy spikes and plan accordingly, shifting the platform from a purely reactive monitor to a proactive intelligence tool.
+
+\section{Dynamic Calibration}
+
+Voltguard exposes configurable parameters to system operators. Through the frontend dashboard, users can dynamically adjust the \textbf{Prophet uncertainty interval}.
 
 \section{API}
 
 The service is built with \textbf{FastAPI} and exposes:
 
 \begin{itemize}[noitemsep]
-  \item \texttt{POST /ingest} — receive a batch of sensor readings.
+  \item \texttt{GET /measurements} — retrieves historical sensor readings.
   \item \texttt{GET /anomalies} — query confirmed anomaly events.
+  \item \texttt{GET /forecasts/\{sensor\_id\}} — generate future consumption forecasts on-demand using the persisted model.
+  \item \texttt{PUT /models/\{model\_id\}/config} — update the model sensitivity and configuration parameters.
+  \item \texttt{POST /webhooks} — register an endpoint for asynchronous processing callbacks.
   \item \texttt{GET /metrics} — Prometheus metrics endpoint.
   \item \texttt{GET /docs} — auto-generated FastAPI interactive documentation.
 \end{itemize}
@@ -424,8 +433,8 @@ Traffic arrives at the Kong proxy port and is routed to the appropriate upstream
 \toprule
 \textbf{Path / Host pattern} & \textbf{Upstream service} \\
 \midrule
-\texttt{/}            & Compositor Frontend \\
-\texttt{/api/*}       & Compositor Backend \\
+\texttt{/}            & Composer Frontend \\
+\texttt{/api/*}       & Composer Backend \\
 \texttt{/auth/*}      & Keycloak \\
 \texttt{/oam/*}       & OAM Service \\
 \texttt{/notify/*}    & Notifications Service \\
@@ -458,7 +467,7 @@ All production workloads run in the namespace \texttt{tenant-grupo4-egs-deti-ua-
 \toprule
 \textbf{Name} & \textbf{Consumer} \\
 \midrule
-\texttt{compositor-data}        & Compositor Backend (session data) \\
+\texttt{composer-data}        & Composer Backend (session data) \\
 \texttt{oam-postgres-data}      & OAM PostgreSQL \\
 \texttt{oam-firmware-storage}   & OAM firmware binaries \\
 \texttt{notifications-db-data}  & Notifications Service \\
@@ -491,7 +500,7 @@ Two HPAs are configured, both CPU-triggered:
 \textbf{Component} & \textbf{Min replicas} & \textbf{Max replicas} & \textbf{Metric} \\
 \midrule
 Kong Gateway         & 2 & 5 & CPU utilisation \\
-Compositor Frontend  & 2 & 5 & CPU utilisation \\
+Composer Frontend  & 2 & 5 & CPU utilisation \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -517,7 +526,7 @@ The observability stack is deployed via \texttt{k8s/observability.yaml} and cons
 \textbf{Job name} & \textbf{Metrics path} \\
 \midrule
 \texttt{anomaly-api}          & \texttt{anomaly-api:8085/metrics} \\
-\texttt{compositor-backend}   & \texttt{compositor-backend:8080/metrics} \\
+\texttt{composer-backend}   & \texttt{compositor-backend:8080/metrics} \\
 \texttt{notifications-service}& \texttt{notifications-service:8083/metrics} \\
 \texttt{oam-service}          & \texttt{oam-service:8080/metrics} \\
 \bottomrule
