@@ -352,7 +352,7 @@ The pipeline uses a robust time-series forecasting approach:
 
 A reading is escalated to the Notifications service only if it falls outside the established Prophet confidence interval, ensuring proactive anomaly detection.
 
-\subsection*{Future Forecasting}
+\section{Future Forecasting}
 
 Beyond historical analysis, the persisted Prophet model unlocks proactive capabilities. The System can generate on-demand \textbf{forecasts} to project future energy consumption. This allows facility managers to anticipate energy spikes and plan accordingly, shifting the platform from a purely reactive monitor to a proactive intelligence tool.
 
@@ -384,32 +384,45 @@ The service uses a \texttt{vault\_loader.py} module to pull sensitive configurat
 % ============================================================
 
 \section{Overview}
+The Notifications service is a multi-channel alerting gateway that acts as an abstraction layer for operational communications. When the system's orchestrator (Composer) detects an anomaly event, it actively invokes this service by dispatching an HTTP \texttt{POST} request containing the payload. Upon receiving the request, the Notifications service evaluates user-defined routing profiles and executes the delivery process accordingly.
 
-The Notifications service is a multi-channel alerting gateway. When the Anomaly Detection service confirms an anomaly, it calls this service to dispatch alerts through the configured channels.
+\section{Technology Stack}
+The Notifications service is built upon a modern, asynchronous pythonic ecosystem designed for high throughput and strict contract enforcement. The complete technology stack comprises the following components:
 
-\section{Technology}
+\begin{itemize}
+    \item \textbf{Framework \& API Enforcement:} Follows an \textbf{OpenAPI-first} approach using \textbf{Connexion}, a Python framework that dynamically generates the WSGI application layer.
+    \item \textbf{Email Dispatch:} Implements native \textbf{SMTP} protocols through Python's built-in \texttt{smtplib} and \texttt{email} packages, supporting secure \textbf{TLS} encryption and integration with modern relay providers (e.g., Gmail App Passwords).
+    \item \textbf{SMS Gateway:} Leverages the external \textbf{Twilio REST API} via the official \texttt{twilio} client library for transactional and operational mobile text messaging.
+    \item \textbf{Extensible Architecture:} The core dispatch motor is decoupled from hardcoded credentials, dynamically consuming provider parameters from the database to allow seamless runtime registration or over-riding of additional communication channels without service downtime.
+\end{itemize}
 
-The service follows an \textbf{OpenAPI-first} approach using \textbf{Connexion}, a Python framework that generates the WSGI application directly from an \texttt{openapi.yaml} specification. 
+\section{Stored Data}
+The service utilizes a \textbf{MongoDB} database to guarantee loose coupling and dedicated storage. Persistent state includes:
+\begin{itemize}
+    \item \textbf{User Preferences} — Stores unique user identifiers, cryptographic secrets, channel targets (phone numbers, emails), and alert dispatch policies (immediate vs. digest).
+    \item \textbf{Notifications \& Digest Queue} — Holds operational logs of submitted payloads and a dedicated buffer queue for deferred alert aggregation.
+    \item \textbf{Notification Audit} — Keeps a structured lifecycle event trail (e.g., \texttt{CREATED}, \texttt{DELIVERY\_ATTEMPT}, \texttt{ABORTED\_BY\_PREFERENCE}) for diagnostic and compliance purposes .
+\end{itemize}
 
-\section{Supported Channels}
+\section{Supported Channels and API Features}
+All channel integrations are decoupled from core business logic, supporting native email transmission and SMS integrations. Delivery is protected by an idempotency layer.
 
-All channel integrations are handled through the \textbf{Twilio} API. Delivery is idempotent — duplicate anomaly events with the same identifier will not result in duplicate messages.
-
-\begin{table}[H]
+\begin{table}[h!]
 \centering
 \caption{Supported notification channels}
-\label{tab:notify-channels}
-\renewcommand{\arraystretch}{1.3}
-\begin{tabular}{l l}
-\toprule
-\textbf{Channel} & \textbf{Provider} \\
-\midrule
-Email    & Twilio SendGrid \\
-SMS      & Twilio SMS \\
-WhatsApp & Twilio WhatsApp Business API \\
-\bottomrule
+\label{tab:supported_channels}
+\begin{tabular}{ll}
+\hline
+\textbf{Channel} & \textbf{Provider} \\ \hline
+Email            & Native SMTP (\texttt{smtplib} with TLS) \\ 
+SMS              & Twilio SMS API \\ \hline
 \end{tabular}
 \end{table}
+
+\begin{itemize}
+    \item \textbf{Idempotency Key:} The \texttt{POST /v1/notifications} endpoint enforces an idempotency mechanism using the \texttt{Idempotency-Key} HTTP header to prevent duplicate notifications during network retries.
+    \item \textbf{Dynamic Preferences Link:} During the first notification attempt for a specific target, the system dynamically injects an opt-out URL appended with the user's unique cryptographic secret, enabling self-service profile management.
+\end{itemize}
 
 % ============================================================
 \chapter{Kong API Gateway}
