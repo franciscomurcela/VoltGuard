@@ -1,0 +1,1344 @@
+openapi: 3.1.0
+info:
+  title: VoltGuard Composer API
+  version: 1.0.0
+  description: >
+    BFF/Orchestration layer for the VoltGuard dashboard. Exposes a unified,
+    token-secured REST API that orchestrates three upstream microservices:
+    OAM (device registry), Anomaly Detection, and Notifications.
+
+servers:
+  - url: /api
+    description: Composer base path
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Devices
+    description: Device management — proxied to OAM /sensors
+  - name: Anomalies
+    description: Anomaly detection — proxied to Anomaly Detection /v1/anomalies
+  - name: Notifications
+    description: Notification gateway — proxied to Notifications /v1/notifications
+  - name: Firmwares
+    description: Firmware binary management — proxied to OAM /firmwares
+  - name: Metrics
+    description: Aggregated platform metrics (OAM + Anomaly)
+  - name: Districts
+    description: District-level aggregation for the heatmap
+  - name: Health
+    description: Composite health and liveness/readiness probes
+
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Devices ────────────────────────────────────────────────────────────────
+
+  /devices:
+    get:
+      tags: [Devices]
+      summary: List all devices
+      description: >
+        Returns the full device list from OAM (/sensors), normalised to the
+        Composer Device schema. Results are cached for 10 seconds.
+      responses:
+        '200':
+          description: Array of normalised Device objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+              example:
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  name: Sensor_Aveiro_01
+                  district: Aveiro
+                  status: active
+                  anomalyStatus: NONE
+                  firmware: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  lastSeen: '2026-03-18T14:23:51.315Z'
+                  pendingAction: null
+                  registeredAt: '2025-01-10T09:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    post:
+      tags: [Devices]
+      summary: Register a new device
+      x-required-role: admin
+      description: >
+        Validates the payload against the Composer Device schema, then calls
+        POST /sensors on OAM. Requires admin role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInput'
+            example:
+              name: Sensor_Coimbra_01
+              district: Coimbra
+              firmware_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '201':
+          description: Device created — returns normalised Device object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /devices/stats:
+    get:
+      tags: [Devices]
+      summary: Aggregate device statistics
+      description: >
+        Computed in a single pass over the normalised device list. Returns
+        counts grouped by status, district and type.
+      responses:
+        '200':
+          description: Device statistics object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStats'
+              example:
+                total: 42
+                active: 35
+                warning: 4
+                inactive: 3
+                pending: 0
+                byDistrict:
+                  Aveiro: 12
+                  Porto: 15
+                  Lisboa: 15
+                byType: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /devices/{id}:
+    parameters:
+      - $ref: '#/components/parameters/deviceId'
+
+    get:
+      tags: [Devices]
+      summary: Get a single device
+      responses:
+        '200':
+          description: Normalised Device object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Devices]
+      summary: Update a device
+      x-required-role: admin
+      description: >
+        Calls PATCH /sensors/{id} on OAM (OAM uses PATCH semantics).
+        Requires admin role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevicePatch'
+            example:
+              name: Sensor_Coimbra_01_renamed
+              district: Coimbra
+      responses:
+        '200':
+          description: Updated normalised Device object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    delete:
+      tags: [Devices]
+      summary: Delete a device
+      x-required-role: admin
+      description: Requires admin role.
+      responses:
+        '204':
+          description: Device deleted — no body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/actions:
+    post:
+      tags: [Devices]
+      summary: Dispatch an action on a device
+      x-required-role: admin
+      description: >
+        Unified action dispatcher. The `action` field determines which OAM
+        endpoint is called:
+
+        | action value     | OAM endpoint called                              |
+        |------------------|--------------------------------------------------|
+        | REBOOT           | POST /sensors/{id}/actions/reboot                |
+        | CLEAR_ANOMALY    | POST /sensors/{id}/actions/clear-anomaly         |
+        | FIRMWARE_UPDATE  | POST /sensors/{id}/actions/update-firmware       |
+
+        Requires admin role.
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+            examples:
+              reboot:
+                summary: Reboot device
+                value:
+                  action: REBOOT
+              firmwareUpdate:
+                summary: Trigger firmware update
+                value:
+                  action: FIRMWARE_UPDATE
+                  firmware_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+              clearAnomaly:
+                summary: Clear anomaly flag
+                value:
+                  action: CLEAR_ANOMALY
+      responses:
+        '200':
+          description: Action accepted — returns updated Device object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Unknown action or missing firmware_id for FIRMWARE_UPDATE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/anomalies:
+    post:
+      tags: [Devices]
+      summary: Report an anomaly on a device
+      x-required-role: admin
+      description: >
+        Calls POST /sensors/{id}/anomalies on OAM. Sets the anomaly flag on
+        the sensor. Requires admin role.
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Anomaly flag set — returns updated Device object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/keepalive:
+    post:
+      tags: [Devices]
+      summary: Sensor heartbeat — returns pending action
+      description: >
+        Forwards to POST /sensors/{id}/keepalive on OAM. Used by sensors or
+        simulators to signal liveness and receive pending actions.
+        Does not require admin role.
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Keepalive acknowledged — returns pending action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepaliveResponse'
+              example:
+                action: NONE
+                download_link: null
+                target_firmware_id: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Measurements ───────────────────────────────────────────────────────────
+
+  /measurements:
+    post:
+      tags: [Anomalies]
+      summary: Submit sensor measurements for anomaly analysis
+      description: >
+        Forwards to POST /v1/measurements on the Anomaly Detection service.
+        Submits historical sensor data to trigger a Prophet/PyOD analysis job.
+        The response includes a job/measurement ID that can be polled via
+        GET /api/measurements/{id}. Authenticated upstream with X-App-Token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeasurementUploadRequest'
+            example:
+              source_id: sensor_aveiro_01
+              metric_name: voltage
+              dataset:
+                - timestamp: '2026-03-01T00:00:00Z'
+                  value: 230.5
+                - timestamp: '2026-03-01T01:00:00Z'
+                  value: 231.1
+      responses:
+        '202':
+          description: Measurement job accepted — returns job/dataset metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementUploadResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /measurements/{id}:
+    get:
+      tags: [Anomalies]
+      summary: Poll measurement job status
+      description: >
+        Forwards to GET /v1/measurements/{id} on the Anomaly Detection service.
+        Use the ID returned by POST /api/measurements to check analysis progress
+        and retrieve results when complete. Authenticated upstream with X-App-Token.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Measurement/job ID returned by POST /api/measurements
+      responses:
+        '200':
+          description: Measurement job status and results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  # ── Anomalies ──────────────────────────────────────────────────────────────
+
+  /anomalies:
+    get:
+      tags: [Anomalies]
+      summary: List anomalies (paginated)
+      description: >
+        Proxied to GET /v1/anomalies on the Anomaly Detection service.
+        Authenticated to the upstream using X-App-Token (not the user's token).
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+          description: Max records to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Records to skip for pagination
+        - name: sourceId
+          in: query
+          schema:
+            type: string
+          description: Filter by sensor/source ID (optional)
+      responses:
+        '200':
+          description: Paginated anomaly list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAnomalyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /anomalies/summary:
+    get:
+      tags: [Anomalies]
+      summary: Anomaly summary stats (dashboard widget)
+      description: >
+        Calls GET /v1/metrics on the Anomaly Detection service. Returns
+        counts of active jobs, total anomalies detected and model health.
+      responses:
+        '200':
+          description: Metrics object from the Anomaly service
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /anomalies/model-config:
+    get:
+      tags: [Anomalies]
+      summary: Get AI model configuration
+      description: >
+        Returns the current configuration of the Prophet/PyOD model via
+        GET /v1/models/config on the Anomaly Detection service.
+      responses:
+        '200':
+          description: ModelConfig object from the Anomaly service
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    put:
+      tags: [Anomalies]
+      summary: Update AI model configuration
+      x-required-role: admin
+      description: >
+        Calls PUT /v1/models/config on the Anomaly Detection service.
+        Requires admin role.
+      requestBody:
+        required: true
+        description: >
+          Payload forwarded as-is to the Anomaly service ModelConfig schema.
+          Refer to the Anomaly Detection API documentation for field definitions.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated ModelConfig object
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /anomalies/{id}:
+    get:
+      tags: [Anomalies]
+      summary: Get anomaly detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Anomaly ID
+      responses:
+        '200':
+          description: AnomalyDetail object from the Anomaly service
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Notifications ──────────────────────────────────────────────────────────
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications (paginated)
+      description: >
+        Proxied to GET /v1/notifications on the Notifications service.
+        Upstream auth is handled via auth_token query param and
+        client_id = "energy_composer".
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: Max records to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Records to skip
+      responses:
+        '200':
+          description: Array of notification objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+              example:
+                - id: notif_89Nxyz
+                  client_id: energy_composer
+                  status: QUEUED_FOR_DIGEST
+                  created_at: '2026-03-04T10:30:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    post:
+      tags: [Notifications]
+      summary: Send a notification
+      description: >
+        Forwards the request to POST /v1/notifications on the Notifications
+        service. The service routes the message based on recipient preferences
+        (immediate delivery or digest queue).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+            example:
+              client_id: energy_composer
+              target: '+351910000000'
+              channel: twilio_sms
+              alert_type: critical
+              message_template: Alerta Crítico na subestação A.
+      responses:
+        '201':
+          description: Notification created — queued or sent immediately
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get notification delivery status
+      description: >
+        Verifies whether the notification status is "Delivered", "Failed"
+        or "In Digest Queue".
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Notification ID
+      responses:
+        '200':
+          description: Notification object with current delivery status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Firmwares ──────────────────────────────────────────────────────────────
+
+  /firmwares:
+    get:
+      tags: [Firmwares]
+      summary: List firmware versions
+      responses:
+        '200':
+          description: Array of Firmware objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Firmware'
+              example:
+                - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  version: v1.2.0
+                  uploaded_at: '2026-03-18T14:23:51.377Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    post:
+      tags: [Firmwares]
+      summary: Upload new firmware binary
+      x-required-role: admin
+      description: >
+        Proxied to POST /firmwares on OAM. Accepts multipart/form-data,
+        maximum file size 50 MB. Requires admin role.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, version]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Firmware binary file (max 50 MB)
+                version:
+                  type: string
+                  description: Semantic version string, e.g. "v1.2.0"
+      responses:
+        '201':
+          description: Firmware uploaded — returns firmware metadata from OAM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Firmware'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /firmwares/{id}/download:
+    get:
+      tags: [Firmwares]
+      summary: Download a firmware binary
+      description: >
+        Proxied to GET /firmwares/download/{id} on OAM.
+        Returns the raw binary as application/octet-stream.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Firmware UUID
+      responses:
+        '200':
+          description: Firmware binary file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Metrics ────────────────────────────────────────────────────────────────
+
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Aggregated platform metrics
+      description: >
+        Fetches OAM sensor stats (GET /sensors/stats) and Anomaly service
+        metrics (GET /v1/metrics) in parallel, then merges them into a
+        single response.
+      responses:
+        '200':
+          description: Merged metrics object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMetrics'
+              example:
+                oam:
+                  total: 42
+                  online: 35
+                  offline: 7
+                  with_anomaly: 4
+                  by_district:
+                    Aveiro: 12
+                    Porto: 15
+                    Lisboa: 15
+                anomaly:
+                  active_jobs: 2
+                  total_anomalies: 128
+                  models_loaded: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+
+  # ── Districts ──────────────────────────────────────────────────────────────
+
+  /districts/stats:
+    get:
+      tags: [Districts]
+      summary: District stats from OAM
+      description: >
+        Proxy to GET /sensors/stats on OAM. Identical to GET /api/metrics/districts
+        but mounted under the districts prefix for semantic clarity.
+      responses:
+        '200':
+          description: SensorStats object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /districts/devices:
+    get:
+      tags: [Districts]
+      summary: Device count distribution per district
+      description: >
+        Computed from the normalised device list (cached, TTL 10 s).
+        Used for map overlay density rendering.
+      responses:
+        '200':
+          description: Device distribution per district
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistrictDevices'
+              example:
+                byDistrict:
+                  Aveiro: 12
+                  Porto: 15
+                  Lisboa: 15
+                total: 42
+                active: 35
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /districts/{districtId}/summary:
+    get:
+      tags: [Districts]
+      summary: Single district aggregated summary
+      parameters:
+        - name: districtId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >
+            District name or normalised ID — e.g. "Aveiro" or "aveiro".
+            Matching is case-insensitive with underscore normalisation.
+      responses:
+        '200':
+          description: Device list, counts and type breakdown for the district
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistrictSummary'
+              example:
+                district: Aveiro
+                deviceCount: 12
+                activeDevices: 10
+                devices: []
+                byType: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  # ── Health ─────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Full composite health check
+      description: >
+        No authentication required. Checks the Composer process and all three
+        upstream services (OAM, Anomaly, Notifications) in parallel with a
+        3-second timeout per service. Always returns HTTP 200; check the
+        `status` field for degraded/down states.
+      security: []
+      responses:
+        '200':
+          description: Composite health report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReport'
+              example:
+                status: healthy
+                uptime: 3600
+                services:
+                  oam:
+                    status: healthy
+                    latency: 12
+                  anomaly:
+                    status: healthy
+                    latency: 18
+                  notifications:
+                    status: degraded
+                    latency: 2901
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      description: >
+        No authentication required. Returns 200 if the Node.js process is
+        running. Does not contact upstream services.
+      security: []
+      responses:
+        '200':
+          description: Process alive
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: >
+        No authentication required. Returns 200 only if at least one upstream
+        service is reachable. Returns 503 if all upstreams are down.
+      security: []
+      responses:
+        '200':
+          description: At least one upstream reachable — ready to accept traffic
+        '503':
+          description: All upstream services unreachable
+
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak access token. Role claims are read from realm_access.roles.
+
+  parameters:
+    deviceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Device UUID (OAM sensor ID)
+
+  schemas:
+
+    Device:
+      type: object
+      description: >
+        Normalised device model. `status` and `anomalyStatus` are derived by
+        the Composer from OAM raw fields (ultimo_keepalive + anomaly_status).
+      required: [id, name, district, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier — OAM sensor ID
+        name:
+          type: string
+          description: Human-readable device name
+        district:
+          type: string
+          description: Portuguese district name
+          enum:
+            - Lisboa
+            - Porto
+            - Aveiro
+            - Coimbra
+            - Faro
+            - Braga
+            - Setúbal
+            - Évora
+            - Viseu
+            - Guarda
+            - Bragança
+            - Vila Real
+            - Viana do Castelo
+            - Leiria
+            - Santarém
+            - Castelo Branco
+            - Portalegre
+            - Beja
+        status:
+          type: string
+          enum: [active, warning, inactive]
+          description: >
+            Computed from OAM fields:
+            active = online + no anomaly;
+            warning = online + anomaly DETECTED;
+            inactive = keepalive stale (>2 min) or null.
+        anomalyStatus:
+          type: [string, 'null']
+          enum: [NONE, DETECTED, null]
+          description: Raw anomaly_status from OAM
+        firmware:
+          type: [string, 'null']
+          format: uuid
+          description: current_firmware_id from OAM
+        lastSeen:
+          type: [string, 'null']
+          format: date-time
+          description: ultimo_keepalive from OAM
+        pendingAction:
+          type: [string, 'null']
+          enum: [REBOOT, UPDATE_FIRMWARE, null]
+          description: Pending action from OAM; null when OAM returns "NONE"
+        registeredAt:
+          type: [string, 'null']
+          format: date-time
+          description: created_at from OAM
+
+    DeviceInput:
+      type: object
+      required: [name, district]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          description: Minimum 2 characters
+        district:
+          type: string
+          description: One of the 18 Portuguese districts
+        firmware_id:
+          type: string
+          format: uuid
+          description: Firmware currently installed (optional)
+
+    DevicePatch:
+      type: object
+      description: Partial update — all fields optional
+      properties:
+        name:
+          type: string
+          minLength: 2
+        district:
+          type: string
+
+    DeviceStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        active:
+          type: integer
+        warning:
+          type: integer
+        inactive:
+          type: integer
+        pending:
+          type: integer
+        byDistrict:
+          type: object
+          additionalProperties:
+            type: integer
+        byType:
+          type: object
+          additionalProperties:
+            type: integer
+
+    ActionRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [REBOOT, CLEAR_ANOMALY, FIRMWARE_UPDATE]
+        firmware_id:
+          type: string
+          format: uuid
+          description: Required when action = FIRMWARE_UPDATE
+
+    KeepaliveResponse:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [NONE, REBOOT, UPDATE_FIRMWARE]
+        download_link:
+          type: [string, 'null']
+        target_firmware_id:
+          type: [string, 'null']
+          format: uuid
+
+    PaginatedAnomalyResponse:
+      type: object
+      description: Forwarded as-is from the Anomaly Detection service
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        client_id:
+          type: string
+        status:
+          type: string
+          enum: [SENT, FAILED, QUEUED_FOR_DIGEST]
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationRequest:
+      type: object
+      required: [client_id, target, channel, alert_type, message_template]
+      properties:
+        client_id:
+          type: string
+          description: Sending microservice identifier
+        target:
+          type: string
+          description: Recipient phone number or email address
+        channel:
+          type: string
+          description: twilio_sms | email
+        alert_type:
+          type: string
+          enum: [critical, warning, info]
+        message_template:
+          type: string
+          description: Message text to deliver
+
+    Firmware:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: string
+          description: Semantic version string, e.g. "v1.2.0"
+        uploaded_at:
+          type: string
+          format: date-time
+
+    SensorStats:
+      type: object
+      description: Aggregate statistics from OAM GET /sensors/stats
+      properties:
+        total:
+          type: integer
+        online:
+          type: integer
+          description: Sensors with a keepalive in the last 5 minutes (OAM definition)
+        offline:
+          type: integer
+        with_anomaly:
+          type: integer
+        by_district:
+          type: object
+          additionalProperties:
+            type: integer
+
+    PlatformMetrics:
+      type: object
+      properties:
+        oam:
+          $ref: '#/components/schemas/SensorStats'
+        anomaly:
+          type: object
+          additionalProperties: true
+          description: Raw metrics object from the Anomaly Detection service
+
+    DistrictDevices:
+      type: object
+      properties:
+        byDistrict:
+          type: object
+          additionalProperties:
+            type: integer
+        total:
+          type: integer
+        active:
+          type: integer
+
+    DistrictSummary:
+      type: object
+      properties:
+        district:
+          type: string
+        deviceCount:
+          type: integer
+        activeDevices:
+          type: integer
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        byType:
+          type: object
+          additionalProperties:
+            type: integer
+
+    HealthReport:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, down]
+        uptime:
+          type: integer
+          description: Process uptime in seconds
+        services:
+          type: object
+          properties:
+            oam:
+              $ref: '#/components/schemas/ServiceHealth'
+            anomaly:
+              $ref: '#/components/schemas/ServiceHealth'
+            notifications:
+              $ref: '#/components/schemas/ServiceHealth'
+
+    ServiceHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, down]
+        latency:
+          type: [integer, 'null']
+          description: Round-trip latency in milliseconds
+        error:
+          type: [string, 'null']
+          description: Error message if status is down
+
+    MeasurementUploadRequest:
+      type: object
+      description: >
+        Historical sensor measurements for Prophet/PyOD analysis.
+        Forwarded as-is to POST /v1/measurements on the Anomaly service.
+      required: [source_id, metric_name, dataset]
+      properties:
+        source_id:
+          type: string
+          description: Sensor/source identifier
+        metric_name:
+          type: string
+          description: Metric name, e.g. voltage
+        dataset:
+          type: array
+          description: Time-series data points
+          items:
+            $ref: '#/components/schemas/DatasetPoint'
+
+    DatasetPoint:
+      type: object
+      required: [timestamp, value]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+          format: float
+
+    MeasurementUploadResponse:
+      type: object
+      description: Forwarded as-is from the Anomaly Detection service (DatasetUploadResponse)
+      properties:
+        measurement_id:
+          type: string
+          description: Measurement/job ID — use with GET /api/measurements/{id}
+        source_id:
+          type: string
+        metric_name:
+          type: string
+        status:
+          type: string
+        rows_received:
+          type: integer
+        rows_training:
+          type: integer
+        rows_forecast:
+          type: integer
+
+    MeasurementStatus:
+      type: object
+      description: Forwarded as-is from the Anomaly Detection service (DatasetInfo)
+      properties:
+        id:
+          type: string
+        sensor_id:
+          type: string
+        status:
+          type: string
+          description: Processing status of the analysis job
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+          description: Field-level details — only present on ValidationError (400)
+
+  responses:
+
+    Unauthorized:
+      description: Bearer token missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
+            message: Bearer token missing or expired
+
+    Forbidden:
+      description: Authenticated but insufficient role (admin required)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Forbidden
+            message: Insufficient permissions for this resource
+
+    NotFound:
+      description: Resource not found on upstream service
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Not Found
+            message: Resource not found
+
+    ValidationError:
+      description: Validation failed — missing or invalid fields
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Validation error
+            message: 'Validation failed: name is required and must be at least 2 characters'
+            details:
+              - name is required and must be at least 2 characters
+
+    Conflict:
+      description: Resource already exists (name or version conflict)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Conflict
+            message: Resource already exists
+
+    BadGateway:
+      description: Upstream service unavailable or returned an error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Upstream service error
+            message: Upstream service unavailable

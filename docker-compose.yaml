@@ -1,0 +1,539 @@
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH — Keycloak Database (PostgreSQL)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres-keycloak:
+    image: postgres:17-alpine
+    container_name: voltguard-postgres-keycloak
+    environment:
+      POSTGRES_USER: keycloak_user
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_pass}
+      POSTGRES_DB: keycloak_db
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql/data
+    networks:
+      - keycloak-db-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak_user -d keycloak_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH — Keycloak
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: voltguard-keycloak
+    # 'start' (production mode) requires an external DB — see KC_DB_* below.
+    # Replaces 'start-dev' which used an embedded H2 DB and disabled hardening.
+    command: start --import-realm
+    environment:
+      # Keycloak 25 still uses the older KEYCLOAK_ADMIN_* names for the
+      # initial admin. KC_BOOTSTRAP_ADMIN_* fully takes over in 26+.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: https://auth.voltguard.pt
+      KC_HOSTNAME_ADMIN: https://auth.voltguard.pt
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      # Trust X-Forwarded-* headers only from Docker bridge subnets (Kong container)
+      KC_PROXY_TRUSTED_ADDRESSES: "172.0.0.0/8"
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres-keycloak
+      KC_DB_URL_DATABASE: keycloak_db
+      KC_DB_USERNAME: keycloak_user
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_pass}
+    volumes:
+      - ./composer-service/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres-keycloak:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+      - keycloak-db-net
+    healthcheck:
+      # curl/wget absent from Keycloak's UBI image — raw bash TCP socket HTTP/1.0 request
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.. 200' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # VAULT — Secret Manager (dev mode)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  vault:
+    image: hashicorp/vault:1.15
+    command: server -dev -dev-root-token-id=dev-root -dev-listen-address=0.0.0.0:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # VAULT SEEDER — one-shot init that populates secret/compositor on every up.
+  # Consumers depend on it with service_completed_successfully so they only
+  # boot after secrets exist. Replaces the manual seed-vault.sh + restart cycle.
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  vault-seeder:
+    image: hashicorp/vault:1.15
+    container_name: voltguard-vault-seeder
+    depends_on:
+      vault:
+        condition: service_started
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      NOTIFICATIONS_AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      ANOMALY_APP_TOKEN: ${ANOMALY_APP_TOKEN:-token_do_composer_123}
+      VG_APP_TOKEN: ${VG_APP_TOKEN:-token_do_composer_123}
+      VG_ADMIN_TOKEN: ${VG_ADMIN_TOKEN:-token_admin_999}
+      COMPOSITOR_KC_SECRET: ${COMPOSITOR_KC_SECRET:-change-me-in-production}
+      SESSION_SECRET: ${COMPOSITOR_SESSION_SECRET:-change-me-random-32-chars}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
+      TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
+    networks:
+      - voltguard-network
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        until vault status >/dev/null 2>&1; do sleep 1; done
+        vault kv put secret/compositor \
+          NOTIFICATIONS_AUTH_TOKEN="$$NOTIFICATIONS_AUTH_TOKEN" \
+          ANOMALY_APP_TOKEN="$$ANOMALY_APP_TOKEN" \
+          VG_APP_TOKEN="$$VG_APP_TOKEN" \
+          VG_ADMIN_TOKEN="$$VG_ADMIN_TOKEN" \
+          COMPOSITOR_KC_SECRET="$$COMPOSITOR_KC_SECRET" \
+          SESSION_SECRET="$$SESSION_SECRET" \
+          SMTP_PASSWORD="$$SMTP_PASSWORD" \
+          TWILIO_ACCOUNT_SID="$$TWILIO_ACCOUNT_SID" \
+          TWILIO_AUTH_TOKEN="$$TWILIO_AUTH_TOKEN" \
+          TWILIO_FROM_PHONE="$$TWILIO_FROM_PHONE" \
+          TWILIO_FROM_WHATSAPP="$$TWILIO_FROM_WHATSAPP"
+    restart: "no"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Backend
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-backend:
+    build:
+      context: ./composer-service/backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-compositor-backend
+    # Resolve auth.voltguard.pt to the Docker host so the backend's bearer-only
+    # validator can fetch the realm's public key from Kong (which terminates TLS
+    # for the issuer URL baked into JWTs). host-gateway is a special Docker
+    # alias that points at the host's IP from inside the container.
+    extra_hosts:
+      - "auth.voltguard.pt:host-gateway"
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET_PATH: secret/data/compositor
+      # KEYCLOAK_URL must match the token issuer (iss claim) — Keycloak's
+      # KC_HOSTNAME bakes https://auth.voltguard.pt into every issued JWT, so
+      # the backend must validate against the same URL. NODE_TLS_REJECT_UNAUTHORIZED
+      # is set to 0 because the public cert is mkcert (dev). For UA's prod cert,
+      # remove the NODE_TLS line.
+      KEYCLOAK_URL: https://auth.voltguard.pt
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      KEYCLOAK_REALM: iot-compositor
+      KEYCLOAK_CLIENT_ID: compositor-backend
+      OAM_SERVICE_URL: ${OAM_SERVICE_URL:-http://oam-service:8080}
+      NOTIFICATION_SERVICE_URL: http://notifications-service:8083
+      ANOMALY_SERVICE_URL: http://anomaly-api:8085
+      PROXY_TIMEOUT_MS: 8000
+      PROXY_RETRY_COUNT: 1
+      PROXY_RETRY_DELAY_MS: 500
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 200
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://composer.voltguard.pt}
+      COMPOSITOR_CLIENT_ID: energy_composer
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      # NOTIFICATIONS_AUTH_TOKEN and ANOMALY_APP_TOKEN now loaded from Vault
+      COMPOSER_BASE_URL: ${COMPOSER_BASE_URL:-http://compositor-backend:8080}
+      ANOMALY_NOTIFY_USER_IDS: ${ANOMALY_NOTIFY_USER_IDS:-op_joao_silva,op_maria_costa}
+      DIGEST_INTERVAL_MS: ${DIGEST_INTERVAL_MS:-60000}
+    ports:
+      - "8080:8080"
+    volumes:
+      - compositor-data:/app/data
+    depends_on:
+      vault-seeder:
+        condition: service_completed_successfully
+      oam-service:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health/live"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COMPOSITOR — Frontend
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  compositor-frontend:
+    build:
+      context: ./composer-service/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_KEYCLOAK_URL: https://auth.voltguard.pt
+        VITE_AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      network: host
+    container_name: voltguard-compositor-frontend
+    depends_on:
+      compositor-backend:
+        condition: service_healthy
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Database
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  notifications-db:
+    image: mongo:7.0
+    container_name: voltguard-notifications-db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications_password}
+      MONGO_INITDB_DATABASE: notifications_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - notifications-db-data:/data/db
+    networks:
+      - notifications-db-net
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.adminCommand({ping:1})' --quiet"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS — Service
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  notifications-service:
+    build:
+      context: ./notifications-service
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-notifications-service
+    environment:
+      MONGODB_URL: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
+      MONGODB_DATABASE: notifications_db
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8083
+      AUTH_TOKEN: ${NOTIFICATIONS_AUTH_TOKEN:-your_secure_auth_token}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_PHONE: ${TWILIO_FROM_PHONE:-}
+      TWILIO_FROM_WHATSAPP: ${TWILIO_FROM_WHATSAPP:-}
+      TWILIO_FROM_EMAIL: ${TWILIO_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-alertasvoltguard@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-alertasvoltguard@gmail.com}
+      SEED_DEFAULT_PREFERENCES: ${SEED_DEFAULT_PREFERENCES:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET_PATH: secret/data/compositor
+    depends_on:
+      notifications-db:
+        condition: service_healthy
+      vault-seeder:
+        condition: service_completed_successfully
+    networks:
+      - voltguard-network
+      - notifications-db-net
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Database (PostgreSQL)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres-oam:
+    image: postgres:17-alpine
+    container_name: voltguard-postgres-oam
+    environment:
+      POSTGRES_USER: oam_user
+      POSTGRES_PASSWORD: ${OAM_DB_PASSWORD:-oam_pass}
+      POSTGRES_DB: oam_db
+    volumes:
+      - oam-postgres-data:/var/lib/postgresql/data
+    networks:
+      - oam-db-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oam_user -d oam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OAM — Service (Rust / Axum)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  oam-service:
+    build:
+      context: ./oam-service
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-oam-service
+    environment:
+      DATABASE_URL: postgres://oam_user:${OAM_DB_PASSWORD:-oam_pass}@postgres-oam:5432/oam_db
+      SERVER_ADDR: 0.0.0.0:8080
+      FIRMWARE_STORAGE_PATH: /app/firmware_storage
+      BASE_URL: ${OAM_BASE_URL:-http://oam.voltguard.pt}
+      RUST_LOG: ${LOG_LEVEL:-info}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET_PATH: secret/data/compositor
+    volumes:
+      - oam-firmware-storage:/app/firmware_storage
+    ports:
+      - "8084:8080"
+    depends_on:
+      postgres-oam:
+        condition: service_healthy
+      vault-seeder:
+        condition: service_completed_successfully
+    networks:
+      - voltguard-network
+      - oam-db-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ANOMALY — FastAPI (API)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  anomaly-api:
+    build:
+      context: ./anomaly-detection
+      dockerfile: Dockerfile
+      network: host
+    container_name: voltguard-anomaly-api
+    environment:
+      VG_MONGO_URI: ${VG_MONGO_URI:-}
+      VG_MONGO_DB: ${VG_MONGO_DB:-voltguard}
+      VG_PERIODIC_INGESTION_ENABLED: ${VG_PERIODIC_INGESTION_ENABLED:-0}
+      VG_INGESTION_INTERVAL_SECONDS: ${VG_INGESTION_INTERVAL_SECONDS:-60}
+      VG_INGESTION_MODE: ${VG_INGESTION_MODE:-composer_push}
+      VG_DATASET_1_URL: ${VG_DATASET_1_URL:-https://archive.ics.uci.edu/static/public/235/individual+household+electric+power+consumption.zip}
+      VG_DATASET_1_SOURCE_ID: ${VG_DATASET_1_SOURCE_ID:-sensor_periodic_uci_household}
+      VG_DATASET_1_METRIC_NAME: ${VG_DATASET_1_METRIC_NAME:-global_active_power}
+      VG_DATASET_1_TIMESTAMP_COLUMN: ${VG_DATASET_1_TIMESTAMP_COLUMN:-}
+      VG_DATASET_1_TIMESTAMP_FORMAT: ${VG_DATASET_1_TIMESTAMP_FORMAT:-%d/%m/%Y %H:%M:%S}
+      VG_DATASET_1_DATE_COLUMN: ${VG_DATASET_1_DATE_COLUMN:-Date}
+      VG_DATASET_1_TIME_COLUMN: ${VG_DATASET_1_TIME_COLUMN:-Time}
+      VG_DATASET_1_VALUE_COLUMN: ${VG_DATASET_1_VALUE_COLUMN:-Global_active_power}
+      VG_DATASET_1_DELIMITER: ${VG_DATASET_1_DELIMITER:-;}
+      VG_DATASET_1_TEMPORAL_MODE: ${VG_DATASET_1_TEMPORAL_MODE:-hourly}
+      VG_DATASET_1_AGGREGATION: ${VG_DATASET_1_AGGREGATION:-none}
+      VG_DATASET_1_MAX_ROWS: ${VG_DATASET_1_MAX_ROWS:-1000}
+      VG_DATASET_2_URL: ${VG_DATASET_2_URL:-https://raw.githubusercontent.com/jenfly/opsd/master/opsd_germany_daily.csv}
+      VG_DATASET_2_SOURCE_ID: ${VG_DATASET_2_SOURCE_ID:-sensor_periodic_opsd}
+      VG_DATASET_2_METRIC_NAME: ${VG_DATASET_2_METRIC_NAME:-consumption}
+      VG_DATASET_2_TIMESTAMP_COLUMN: ${VG_DATASET_2_TIMESTAMP_COLUMN:-Date}
+      VG_DATASET_2_VALUE_COLUMN: ${VG_DATASET_2_VALUE_COLUMN:-Consumption}
+      VG_DATASET_2_DELIMITER: ${VG_DATASET_2_DELIMITER:-}
+      VG_DATASET_2_TEMPORAL_MODE: ${VG_DATASET_2_TEMPORAL_MODE:-daily}
+      VG_DATASET_2_AGGREGATION: ${VG_DATASET_2_AGGREGATION:-mean}
+      VG_DATASET_2_MAX_ROWS: ${VG_DATASET_2_MAX_ROWS:-0}
+      VG_COMPOSER_BASE_URL: ${VG_COMPOSER_BASE_URL:-http://compositor-backend:8080}
+      VG_COMPOSER_SENSORS_PATH: ${VG_COMPOSER_SENSORS_PATH:-/v1/sensors}
+      VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE: ${VG_COMPOSER_MEASUREMENTS_PATH_TEMPLATE:-/v1/sensors/{sensor_id}/measurements?limit={limit}}
+      VG_COMPOSER_DATASETS_POST_PATH: ${VG_COMPOSER_DATASETS_POST_PATH:-/v1/anomalies/datasets/push}
+      VG_COMPOSER_TIMEOUT_SECONDS: ${VG_COMPOSER_TIMEOUT_SECONDS:-20}
+      VG_COMPOSER_TOKEN: ${VG_COMPOSER_TOKEN:-}
+      VG_COMPOSER_WEBHOOK_URL: ${VG_COMPOSER_WEBHOOK_URL:-http://compositor-backend:8080/api/webhooks/anomaly}
+      VG_COMPOSER_MEASUREMENTS_LIMIT: ${VG_COMPOSER_MEASUREMENTS_LIMIT:-500}
+      VG_DEFAULT_METRIC_NAME: ${VG_DEFAULT_METRIC_NAME:-voltage}
+      VG_APP_TOKEN: ${VG_APP_TOKEN:-token_do_composer_123}
+      VG_ADMIN_TOKEN: ${VG_ADMIN_TOKEN:-token_admin_999}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_SECRET_PATH: secret/data/compositor
+    depends_on:
+      vault-seeder:
+        condition: service_completed_successfully
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8085/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # KONG — API Gateway
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  kong:
+    image: kong:3.7
+    container_name: voltguard-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      KONG_ADMIN_LISTEN: "127.0.0.1:8001"
+      # Status listener — exposes /status and /metrics (Prometheus plugin) on
+      # the cluster-internal network only. No host port maps to it.
+      KONG_STATUS_LISTEN: "0.0.0.0:8100"
+      KONG_SSL_CERT: /etc/kong/certs/cert.pem
+      KONG_SSL_CERT_KEY: /etc/kong/certs/key.pem
+      KONG_LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "80:8000"    # public gateway — HTTP (kept for health checks)
+      - "443:8443"   # public gateway — HTTPS (required for Keycloak PKCE)
+      - "127.0.0.1:8001:8001"  # Kong admin API — localhost only
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+      - ./kong/certs:/etc/kong/certs:ro
+    depends_on:
+      - compositor-frontend
+      - compositor-backend
+      - oam-service
+      - notifications-service
+      - anomaly-api
+      - keycloak
+    networks:
+      - voltguard-network
+    healthcheck:
+      test: ["CMD", "kong-health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY — Prometheus + Grafana + Exporters
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: voltguard-prometheus
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:9.5.15
+    container_name: voltguard-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3002:3000"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: voltguard-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    container_name: voltguard-mongodb-exporter
+    environment:
+      MONGODB_URI: mongodb://admin:${NOTIFICATIONS_DB_PASSWORD:-notifications_password}@notifications-db:27017
+    ports:
+      - "9216:9216"
+    depends_on:
+      - notifications-db
+    networks:
+      - voltguard-network
+    restart: unless-stopped
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════
+
+volumes:
+  keycloak-postgres-data:
+  notifications-db-data:
+  compositor-data:
+  oam-postgres-data:
+  oam-firmware-storage:
+  prometheus-data:
+  grafana-data:
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORK
+# ═══════════════════════════════════════════════════════════════════════════
+
+networks:
+  voltguard-network:
+    driver: bridge
+  keycloak-db-net:
+    driver: bridge
+  oam-db-net:
+    driver: bridge
+  notifications-db-net:
+    driver: bridge

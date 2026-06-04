@@ -1,0 +1,35 @@
+{
+  "name": "compositor-service-backend",
+  "version": "1.0.0",
+  "description": "SOA Compositor — REST gateway aggregating OAM, Notification, and Anomaly services",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "express-session": "^1.18.0",
+    "form-data": "^4.0.0",
+    "helmet": "^7.1.0",
+    "js-yaml": "^4.1.1",
+    "keycloak-connect": "^25.0.0",
+    "morgan": "^1.10.0",
+    "prom-client": "^14.0.0",
+    "multer": "^1.4.5-lts.1",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  }
+}

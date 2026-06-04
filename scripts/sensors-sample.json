@@ -1,0 +1,59 @@
+[
+  { "name": "Lisboa-01", "district": "Lisboa" },
+  { "name": "Lisboa-02", "district": "Lisboa" },
+  { "name": "Lisboa-03", "district": "Lisboa" },
+  { "name": "Lisboa-04", "district": "Lisboa" },
+
+  { "name": "Porto-01", "district": "Porto" },
+  { "name": "Porto-02", "district": "Porto" },
+  { "name": "Porto-03", "district": "Porto" },
+  { "name": "Porto-04", "district": "Porto" },
+
+  { "name": "Setubal-01", "district": "Setúbal" },
+  { "name": "Setubal-02", "district": "Setúbal" },
+  { "name": "Setubal-03", "district": "Setúbal" },
+
+  { "name": "Faro-01", "district": "Faro" },
+  { "name": "Faro-02", "district": "Faro" },
+  { "name": "Faro-03", "district": "Faro" },
+
+  { "name": "Coimbra-01", "district": "Coimbra" },
+  { "name": "Coimbra-02", "district": "Coimbra" },
+  { "name": "Coimbra-03", "district": "Coimbra" },
+
+  { "name": "Aveiro-01", "district": "Aveiro" },
+  { "name": "Aveiro-02", "district": "Aveiro" },
+  { "name": "Aveiro-03", "district": "Aveiro" },
+
+  { "name": "Braga-01", "district": "Braga" },
+  { "name": "Braga-02", "district": "Braga" },
+  { "name": "Braga-03", "district": "Braga" },
+
+  { "name": "Leiria-01", "district": "Leiria" },
+  { "name": "Leiria-02", "district": "Leiria" },
+  { "name": "Leiria-03", "district": "Leiria" },
+
+  { "name": "Beja-01", "district": "Beja" },
+  { "name": "Beja-02", "district": "Beja" },
+
+  { "name": "Braganca-01", "district": "Bragança" },
+  { "name": "Braganca-02", "district": "Bragança" },
+
+  { "name": "Evora-01", "district": "Évora" },
+  { "name": "Evora-02", "district": "Évora" },
+
+  { "name": "Guarda-01", "district": "Guarda" },
+  { "name": "Guarda-02", "district": "Guarda" },
+
+  { "name": "Portalegre-01", "district": "Portalegre" },
+  { "name": "Portalegre-02", "district": "Portalegre" },
+
+  { "name": "Santarem-01", "district": "Santarém" },
+  { "name": "Santarem-02", "district": "Santarém" },
+
+  { "name": "Viana-01", "district": "Viana do Castelo" },
+  { "name": "Viana-02", "district": "Viana do Castelo" },
+
+  { "name": "Viseu-01", "district": "Viseu" },
+  { "name": "Viseu-02", "district": "Viseu" }
+]
