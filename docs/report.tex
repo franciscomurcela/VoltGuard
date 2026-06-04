@@ -7,7 +7,7 @@
 % ── Packages ────────────────────────────────────────────────
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[english]{babel} 
+\usepackage[english]{babel}
 \usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
 \usepackage{graphicx}
 \usepackage{xcolor}
@@ -126,7 +126,7 @@
 
 \begin{center}
 \renewcommand{\arraystretch}{1.5}
-\begin{tabularx}{0.95\textwidth}{l c >{\raggedright\arraybackslash}X}
+\begin{tabularx}{0.95\textwidth}{l l >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{Name} & \textbf{Student Number} & \textbf{Main Contribution} \\
 \midrule
@@ -137,8 +137,9 @@ Martim Carvalho   & \textit{108749} & \textit{composer backend/frontend / Authen
 \bottomrule
 \end{tabularx}
 
-\smallskip
-\url{https://github.com/franciscomurcela/VoltGuard}
+\vspace{0.8em}
+\textbf{Live deployment:} \url{https://grupo4-egs-deti.ua.pt/}\\
+\textbf{Source code:} \url{https://github.com/franciscomurcela/VoltGuard}
 \end{center}
 
 \vspace{1cm}
@@ -155,7 +156,6 @@ Martim Carvalho   & \textit{108749} & \textit{composer backend/frontend / Authen
 \pagenumbering{roman}
 \setcounter{page}{2}
 
-
 \tableofcontents
 
 \clearpage
@@ -167,7 +167,7 @@ Martim Carvalho   & \textit{108749} & \textit{composer backend/frontend / Authen
 
 \section{Problem Statement}
 
-Energy waste and undetected electrical faults are silent costs in industrial and urban environments. Traditional monitoring approaches are reactive: operators are notified \emph{after} a failure has occurred, or at best during a scheduled inspection. This results in:
+Energy waste and undetected electrical faults are hidden costs in industrial and urban environments. Traditional monitoring approaches are reactive: operators are notified \emph{after} a failure has occurred, or at best during a scheduled inspection. This results in:
 
 \begin{itemize}[noitemsep]
   \item Unplanned downtime that disrupts operations;
@@ -185,19 +185,21 @@ VoltGuard is an end-to-end IoT energy monitoring platform that turns raw sensor 
 \begin{callout}
 \textbf{Monitor} — Centralised, real-time ingestion of electrical measurements from all connected sensors in a single dashboard. \\
 \textbf{Detect} — Automatic anomaly detection using time-series forecasting (Prophet), with no manual threshold configuration. \\
-\textbf{Respond} — Immediate multi-channel alerting (email, SMS, WhatsApp) to the right person the moment an anomaly is confirmed.
+\textbf{Respond} — Immediate multi-channel alerting (email, SMS) to the right person the moment an anomaly is confirmed.
 \end{callout}
 
+The platform is publicly accessible at \url{https://grupo4-egs-deti.ua.pt/} (UA VPN required).
 
 % ============================================================
 \chapter{System Architecture}
 \label{ch:architecture}
 % ============================================================
 
+This chapter introduces the overall topology of VoltGuard: the services that compose it, the technologies behind each one, and how they communicate. Detailed responsibilities for each service are covered in Chapters~\ref{ch:composer}--\ref{ch:notifications}.
+
 \section{Overview}
 
-VoltGuard follows a microservices architecture where each functional domain is isolated in its own deployable unit. All external traffic enters through a single ingress point: the Kong API Gateway, which is then forwarded to the appropriate backend service.
-Service-to-service calls use internal Kubernetes DNS and never traverse the public network.
+VoltGuard follows a microservices architecture where each functional domain is isolated in its own deployable unit. All external traffic enters through a single ingress point: the Kong API Gateway, which then forwards each request to the appropriate upstream service. Service-to-service calls use internal Kubernetes DNS and never traverse the public network.
 
 \begin{figure}[H]
 \centering
@@ -208,7 +210,6 @@ Service-to-service calls use internal Kubernetes DNS and never traverse the publ
 
 \section{Technology Choices}
 
-
 \begin{table}[H]
 \centering
 \caption{Technology stack per service}
@@ -218,15 +219,15 @@ Service-to-service calls use internal Kubernetes DNS and never traverse the publ
 \toprule
 \textbf{Component} & \textbf{Stack} & \textbf{Rationale} \\
 \midrule
-Composer Frontend  & React + Vite       & Component-driven SPA with fast HMR for development \\
-Composer Backend   & Node.js / Express  & Lightweight SOA gateway; rich ecosystem for HTTP proxying \\
-OAM Service          & Rust / Axum / SQLx & Memory safety and throughput for sensor inventory operations \\
-Anomaly Detection    & Python / FastAPI   & Native ecosystem for ML libraries (Prophet) \\
-Notifications        & Python / Connexion & OpenAPI-first design enforced by the Connexion framework \\
-API Gateway          & Kong 3.7 (DB-less) & Declarative config, zero-DB overhead, native K8s support \\
-Authentication       & Keycloak 25        & Standards-compliant OIDC with PKCE; battle-tested in production \\
-Observability        & Prometheus + Grafana & De facto standard for cloud-native metrics collection and visualisation \\
-Orchestration        & Kubernetes         & Self-healing pods, HPA, declarative infrastructure-as-code \\
+Composer Frontend    & React + Vite         & Component-driven SPA with fast HMR for development \\
+Composer Backend     & Node.js / Express    & Lightweight SOA gateway; rich ecosystem for HTTP proxying \\
+OAM Service          & Rust / Axum / SQLx   & Memory-safe, high-throughput service for the sensor inventory \\
+Anomaly Detection    & Python / FastAPI     & Native Prophet bindings and async-friendly ML stack \\
+Notifications        & Python / Connexion   & OpenAPI-first design enforced by the Connexion framework \\
+API Gateway          & Kong 3.7 (DB-less)   & Declarative config, zero-DB overhead, native K8s support \\
+Authentication       & Keycloak 25          & Production-proven OIDC implementation with PKCE support \\
+Observability        & Prometheus + Grafana & De-facto standard for cloud-native metrics collection and visualisation \\
+Orchestration        & Kubernetes           & Self-healing pods, HPA, declarative infrastructure-as-code \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -237,8 +238,10 @@ Orchestration        & Kubernetes         & Self-healing pods, HPA, declarative 
   \item \textbf{Client → Kong}: HTTPS termination at the university Ingress Controller; Kong receives plain HTTP on port 8000.
   \item \textbf{Kong → Services}: Internal Kubernetes DNS.
   \item \textbf{Composer Backend → Peers}: Proxied REST calls with configurable timeout, retry count, and backoff.
-  \item \textbf{Anomaly → Notifications}: Direct internal HTTP POST when an anomaly is confirmed.
+  \item \textbf{Anomaly → Composer}: Outbound webhook \texttt{POST} to the URL declared in \texttt{VG\_COMPOSER\_WEBHOOK\_URL} when an anomaly is confirmed; Composer then enqueues notifications.
   \item \textbf{Prometheus → Services}: Pull-based scrape every 15 seconds against each service's \texttt{/metrics} endpoint.
+  \item \textbf{Authentication}: Unauthenticated requests are rejected with HTTP 401 by the Composer Backend; the frontend redirects to Keycloak, which issues a signed JWT. The backend validates every subsequent request locally against the Keycloak realm — Keycloak is never in the hot path for authenticated calls.
+  \item \textbf{Sensor → alert pipeline}: A reading submitted to Anomaly Detection is evaluated against the Prophet confidence interval; if flagged, the service emits a webhook \texttt{POST} to the Composer Backend, which resolves the user's notification preferences and forwards a dispatch request to the Notifications service for email/SMS delivery.
 \end{itemize}
 
 % ============================================================
@@ -250,6 +253,10 @@ Orchestration        & Kubernetes         & Self-healing pods, HPA, declarative 
 
 The Composer Service is the user-facing core of VoltGuard. It consists of two sub-components: a \textbf{React frontend} that provides the operator dashboard, and a \textbf{Node.js backend} that acts as a Service-Oriented Architecture (SOA) gateway — aggregating and normalising data from all peer microservices before presenting it to the client.
 
+\begin{callout}
+\textbf{Naming note.} This service is referred to as \textbf{Composer} throughout the report. The container images and Kubernetes service names retain the historical prefix \texttt{compositor-} (\texttt{compositor-frontend}, \texttt{compositor-backend}) for backward compatibility with the deployment pipeline.
+\end{callout}
+
 \section{Frontend}
 
 \subsection{Technology \& Build}
@@ -260,27 +267,27 @@ The frontend is built with \textbf{React 18} and \textbf{Vite}, served as a stat
 docker build \
   --build-arg VITE_AUTH_DISABLED=false \
   --build-arg VITE_KEYCLOAK_URL=https://grupo4-egs-deti.ua.pt/auth \
-  -t registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v5 \
+  -t registry.deti/grupo4-egs-deti.ua.pt/compositor-frontend:v7 \
   composer-service/frontend/
 \end{lstlisting}
 
 \subsection{Key Design Decisions}
 
 \begin{itemize}[noitemsep]
-  \item Authentication variables are \textbf{build-time} (baked into the JS bundle), not runtime — this is a Vite constraint; \texttt{VITE\_*} vars are resolved at \texttt{npm run build}.
+  \item Authentication variables are \textbf{build-time} (baked into the JS bundle), not runtime — this is a Vite constraint; \texttt{VITE\_*} vars are resolved at \texttt{npm run build}. The implication is that switching environments requires rebuilding the image, not changing a Kubernetes env var.
   \item The nginx configuration sets \texttt{expires 1y; Cache-Control: public, immutable} for all static assets (JS, CSS, PNG), which maximises caching efficiency for content-hashed filenames.
-  \item \texttt{VITE\_AUTH\_DISABLED} is independent of the backend's \texttt{AUTH\_DISABLED} — both must be consistent or API calls will fail with 403.
+  \item \texttt{VITE\_AUTH\_DISABLED} is independent of the backend's \texttt{AUTH\_DISABLED} — both must be consistent or API calls will fail with HTTP 403, a misconfiguration we hit during development.
 \end{itemize}
 
 \section{Backend}
 
 \subsection{Technology \& Role}
 
-The backend is a \textbf{Node.js / Express} API that acts as the single integration point for all data consumers. It does not own any domain data directly; instead, it proxies and aggregates requests to OAM, Anomaly Detection, and Notifications.
+The backend is a \textbf{Node.js / Express} API that acts as the single integration point for all data consumers. It owns no domain data directly; instead, it proxies and aggregates requests to OAM, Anomaly Detection, and Notifications.
 
 \subsection{Security}
 
-All endpoints are protected by Keycloak JWT validation. The backend verifies tokens against the Keycloak realm and rejects unauthenticated requests with HTTP 401. Sensitive configuration (client secrets, session keys, auth tokens) is loaded from Kubernetes secrets at runtime, never from plain environment variables in the deployment manifest.
+All endpoints are protected by Keycloak JWT validation. The backend verifies tokens against the Keycloak realm and rejects unauthenticated requests with HTTP 401. Sensitive configuration (client secrets, session keys, auth tokens) is loaded from Kubernetes Secrets at runtime, and is never embedded in plain text inside the deployment manifest or container image.
 
 % ============================================================
 \chapter{OAM Service}
@@ -293,14 +300,14 @@ The \textbf{Operations, Administration and Maintenance (OAM)} service manages th
 
 \section{Technology}
 
-The OAM service is written in \textbf{Rust} using the \textbf{Axum} web framework, with \textbf{SQLx} for async PostgreSQL access. Rust was chosen for its memory safety guarantees and predictable latency under load, important properties for a service that receives frequent keepalive heartbeats from a large sensor fleet.
+The OAM service is written in \textbf{Rust} using the \textbf{Axum} web framework, with \textbf{SQLx} for async PostgreSQL access. Rust was chosen for its memory-safety guarantees and predictable latency under load — important properties for a service that receives frequent keepalive heartbeats from a large sensor fleet.
 
 \section{Data Model}
 
 The service uses a \textbf{PostgreSQL 17} database managed by SQLx migrations. Persistent state includes:
 
 \begin{itemize}[noitemsep]
-  \item \textbf{Sensors} — unique identifier, location, firmware version, last-seen timestamp.
+  \item \textbf{Sensors} — unique identifier, district, firmware version, last-seen timestamp.
   \item \textbf{Firmware} — binary blobs stored on a persistent volume, with version metadata and checksum.
   \item \textbf{Keepalives} — timestamped heartbeat records used to detect sensor offline events.
 \end{itemize}
@@ -330,8 +337,8 @@ Keepalive   & \texttt{/keepalive}    & Sensor heartbeat endpoint \\
 Two PersistentVolumeClaims back the OAM service:
 
 \begin{itemize}[noitemsep]
-  \item \texttt{oam-postgres-data}  — PostgreSQL data directory.
-  \item \texttt{oam-firmware-storage}  — Firmware binary blobs.
+  \item \texttt{oam-postgres-data}    — PostgreSQL data directory.
+  \item \texttt{oam-firmware-storage} — Firmware binary blobs.
 \end{itemize}
 
 % ============================================================
@@ -345,35 +352,38 @@ The Anomaly Detection service is the intelligence layer of VoltGuard. It ingests
 
 \section{Machine Learning Pipeline}
 
-The pipeline uses a robust time-series forecasting approach:
+The pipeline uses a robust time-series forecasting approach centred on Prophet:
 
 \begin{itemize}
-  \item \textbf{Prophet} (Meta / Facebook) - a decomposable time-series forecasting model that captures trend and seasonality. The pipeline splits incoming datasets using an \textbf{80/20 rule}: 80\% of the historical data is used to train the model and establish the baseline, while the remaining 20\% is then used for validation and \textbf{historical anomaly detection}, where any readings falling outside the generated confidence interval are flagged.
+  \item \textbf{Prophet} (Meta / Facebook) — a decomposable time-series forecasting model that captures trend and seasonality. The pipeline splits each incoming dataset using an \textbf{80/20 rule}: 80\% of the historical data trains the model and establishes the baseline, while the remaining 20\% is used for validation and \textbf{historical anomaly detection}. Any reading in the validation window that falls outside the generated confidence interval is flagged.
 \end{itemize}
 
-A reading is escalated to the Notifications service only if it falls outside the established Prophet confidence interval, ensuring proactive anomaly detection.
+A reading is escalated to the Composer (and from there to the Notifications service) only if it falls outside the established Prophet confidence interval — a single, well-defined trigger that keeps the false-positive rate low without requiring per-sensor thresholds.
 
-\section{Future Forecasting}
+\section{Predictive Forecasting}
 
-Beyond historical analysis, the persisted Prophet model unlocks proactive capabilities. The System can generate on-demand \textbf{forecasts} to project future energy consumption. This allows facility managers to anticipate energy spikes and plan accordingly, shifting the platform from a purely reactive monitor to a proactive intelligence tool.
+Beyond historical analysis, the persisted Prophet model unlocks proactive capabilities. The service can generate on-demand \textbf{forecasts} (\texttt{GET /forecasts/\{sensor\_id\}}, see §\ref{sec:anomaly-api}) to project future energy consumption. This allows facility managers to anticipate energy spikes and plan accordingly, shifting the platform from a purely reactive monitor toward a proactive intelligence tool.
 
 \section{Dynamic Calibration}
 
-Voltguard exposes configurable parameters to system operators. Through the frontend dashboard, users can dynamically adjust the \textbf{Prophet uncertainty interval}.
+VoltGuard exposes configurable parameters to system operators. Through the frontend dashboard, users can dynamically adjust the \textbf{Prophet uncertainty interval}: tightening the interval increases sensitivity and surfaces more anomalies, while widening it suppresses noise during expected transient events. The change takes effect for subsequent measurements without restarting the service.
 
 \section{API}
+\label{sec:anomaly-api}
 
 The service is built with \textbf{FastAPI} and exposes:
 
 \begin{itemize}[noitemsep]
-  \item \texttt{GET /measurements} — retrieves historical sensor readings.
-  \item \texttt{GET /anomalies} — query confirmed anomaly events.
-  \item \texttt{GET /forecasts/\{sensor\_id\}} — generate future consumption forecasts on-demand using the persisted model.
-  \item \texttt{PUT /models/\{model\_id\}/config} — update the model sensitivity and configuration parameters.
-  \item \texttt{POST /webhooks} — register an endpoint for asynchronous processing callbacks.
+  \item \texttt{POST /v1/measurements} — submit a batch of sensor readings for analysis. Triggers training, validation, and anomaly detection in a single request.
+  \item \texttt{GET /v1/measurements} — retrieves historical sensor readings.
+  \item \texttt{GET /v1/anomalies} — query confirmed anomaly events.
+  \item \texttt{GET /v1/forecasts/\{sensor\_id\}} — generate future consumption forecasts on-demand using the persisted model.
+  \item \texttt{PUT /v1/models/\{model\_id\}/config} — update the model sensitivity and configuration parameters.
   \item \texttt{GET /metrics} — Prometheus metrics endpoint.
   \item \texttt{GET /docs} — auto-generated FastAPI interactive documentation.
 \end{itemize}
+
+When an anomaly is confirmed, the service emits an outbound \texttt{POST} to the Composer webhook URL configured at deploy-time via \texttt{VG\_COMPOSER\_WEBHOOK\_URL}; this is what triggers downstream notifications.
 
 \section{Secrets \& Configuration}
 
@@ -385,44 +395,47 @@ The service uses a \texttt{vault\_loader.py} module to pull sensitive configurat
 % ============================================================
 
 \section{Overview}
-The Notifications service is a multi-channel alerting gateway that acts as an abstraction layer for operational communications. When the system's orchestrator (Composer) detects an anomaly event, it actively invokes this service by dispatching an HTTP \texttt{POST} request containing the payload. Upon receiving the request, the Notifications service evaluates user-defined routing profiles and executes the delivery process accordingly.
+The Notifications service is the multi-channel alert dispatch gateway. When the Composer receives an anomaly webhook from the Anomaly Detection service, it forwards a dispatch request to this service via HTTP \texttt{POST}. The Notifications service then evaluates user-defined routing profiles and executes delivery on each configured channel.
 
 \section{Technology Stack}
-The Notifications service is built upon a modern, asynchronous pythonic ecosystem designed for high throughput and strict contract enforcement. The complete technology stack comprises the following components:
+The service is built on an OpenAPI-driven Python stack chosen for contract enforcement and clean separation between transport and channel logic:
 
 \begin{itemize}
-    \item \textbf{Framework \& API Enforcement:} Follows an \textbf{OpenAPI-first} approach using \textbf{Connexion}, a Python framework that dynamically generates the WSGI application layer.
-    \item \textbf{Email Dispatch:} Implements native \textbf{SMTP} protocols through Python's built-in \texttt{smtplib} and \texttt{email} packages, supporting secure \textbf{TLS} encryption and integration with modern relay providers (e.g., Gmail App Passwords).
-    \item \textbf{SMS Gateway:} Leverages the external \textbf{Twilio REST API} via the official \texttt{twilio} client library for transactional and operational mobile text messaging.
-    \item \textbf{Extensible Architecture:} The core dispatch motor is decoupled from hardcoded credentials, dynamically consuming provider parameters from the database to allow seamless runtime registration or over-riding of additional communication channels without service downtime.
+    \item \textbf{Framework \& API enforcement:} An \textbf{OpenAPI-first} design using \textbf{Connexion}, which generates the WSGI application directly from \texttt{openapi.yaml}.
+    \item \textbf{Email dispatch:} Native \textbf{SMTP} using Python's standard \texttt{smtplib} and \texttt{email} packages, with TLS support and compatibility with modern relay providers (e.g., Gmail App Passwords).
+    \item \textbf{SMS gateway:} The external \textbf{Twilio REST API} via the official \texttt{twilio} client library.
+    \item \textbf{Extensible architecture:} The dispatch engine is decoupled from hardcoded credentials, reading provider parameters from the database. New channels can be registered or existing ones reconfigured at runtime without restarting the service.
 \end{itemize}
 
 \section{Stored Data}
-The service utilizes a \textbf{MongoDB} database to guarantee loose coupling and dedicated storage. Persistent state includes:
+The service uses a \textbf{MongoDB} database, providing loose coupling from the relational stores used by other services. Persistent state includes:
+
 \begin{itemize}
-    \item \textbf{User Preferences} — Stores unique user identifiers, cryptographic secrets, channel targets (phone numbers, emails), and alert dispatch policies (immediate vs. digest).
-    \item \textbf{Notifications \& Digest Queue} — Holds operational logs of submitted payloads and a dedicated buffer queue for deferred alert aggregation.
-    \item \textbf{Notification Audit} — Keeps a structured lifecycle event trail (e.g., \texttt{CREATED}, \texttt{DELIVERY\_ATTEMPT}, \texttt{ABORTED\_BY\_PREFERENCE}) for diagnostic and compliance purposes .
+    \item \textbf{User Preferences} — unique user identifiers, cryptographic secrets, channel targets (phone numbers, emails), and alert dispatch policies (immediate vs.\ digest).
+    \item \textbf{Notifications \& Digest Queue} — operational logs of submitted payloads and a dedicated buffer for deferred alert aggregation.
+    \item \textbf{Notification Audit} — a structured lifecycle event trail (\texttt{CREATED}, \texttt{DELIVERY\_ATTEMPT}, \texttt{ABORTED\_BY\_PREFERENCE}, etc.) for diagnostics and compliance.
 \end{itemize}
 
 \section{Supported Channels and API Features}
-All channel integrations are decoupled from core business logic, supporting native email transmission and SMS integrations. Delivery is protected by an idempotency layer.
+All channel integrations are decoupled from the core business logic. Delivery is protected by an idempotency layer that prevents duplicate dispatch under network retries.
 
-\begin{table}[h!]
+\begin{table}[H]
 \centering
 \caption{Supported notification channels}
 \label{tab:supported_channels}
-\begin{tabular}{ll}
-\hline
-\textbf{Channel} & \textbf{Provider} \\ \hline
-Email            & Native SMTP (\texttt{smtplib} with TLS) \\ 
-SMS              & Twilio SMS API \\ \hline
+\begin{tabular}{l l}
+\toprule
+\textbf{Channel} & \textbf{Provider} \\
+\midrule
+Email            & Native SMTP (\texttt{smtplib} with TLS) \\
+SMS              & Twilio SMS API \\
+\bottomrule
 \end{tabular}
 \end{table}
 
 \begin{itemize}
-    \item \textbf{Idempotency Key:} The \texttt{POST /v1/notifications} endpoint enforces an idempotency mechanism using the \texttt{Idempotency-Key} HTTP header to prevent duplicate notifications during network retries.
-    \item \textbf{Dynamic Preferences Link:} During the first notification attempt for a specific target, the system dynamically injects an opt-out URL appended with the user's unique cryptographic secret, enabling self-service profile management.
+    \item \textbf{Idempotency key.} The \texttt{POST /v1/notifications} endpoint enforces an idempotency mechanism via the \texttt{Idempotency-Key} HTTP header, preventing duplicate notifications when callers retry after transient failures.
+    \item \textbf{Dynamic preferences link.} On the first notification attempt for a given target, the system dynamically injects an opt-out URL signed with the user's unique cryptographic secret, enabling self-service profile management without an additional login step.
 \end{itemize}
 
 % ============================================================
@@ -447,19 +460,19 @@ Traffic arrives at the Kong proxy port and is routed to the appropriate upstream
 \toprule
 \textbf{Path / Host pattern} & \textbf{Upstream service} \\
 \midrule
-\texttt{/}            & Composer Frontend \\
-\texttt{/api/*}       & Composer Backend \\
-\texttt{/auth/*}      & Keycloak \\
-\texttt{/oam/*}       & OAM Service \\
-\texttt{/notify/*}    & Notifications Service \\
-\texttt{/anomaly/*}   & Anomaly Detection \\
+\texttt{/}                  & Composer Frontend \\
+\texttt{/api/*}             & Composer Backend \\
+\texttt{/auth/*}            & Keycloak \\
+\texttt{/oam/*}             & OAM Service \\
+\texttt{/notifications/*}   & Notifications Service \\
+\texttt{/anomaly/*}         & Anomaly Detection \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{High Availability}
 
-Kong is one of the two components managed by a \textbf{HorizontalPodAutoscaler}. The HPA maintains at least 2 Kong replicas at all times, scaling up to 5 under CPU pressure. This ensures that no single Kong pod failure interrupts service, and that the gateway capacity grows proportionally with incoming traffic.
+Kong is one of the two components managed by a \textbf{HorizontalPodAutoscaler}. The HPA maintains at least 2 Kong replicas at all times, scaling up to 5 under CPU pressure. This ensures that no single Kong pod failure interrupts service (verified empirically in §\ref{sec:resilience}), and that gateway capacity grows proportionally with incoming traffic.
 
 % ============================================================
 \chapter{Deployment \& Infrastructure}
@@ -481,7 +494,7 @@ All production workloads run in the namespace \texttt{tenant-grupo4-egs-deti-ua-
 \toprule
 \textbf{Name} & \textbf{Consumer} \\
 \midrule
-\texttt{composer-data}        & Composer Backend (session data) \\
+\texttt{composer-data}          & Composer Backend (session data) \\
 \texttt{oam-postgres-data}      & OAM PostgreSQL \\
 \texttt{oam-firmware-storage}   & OAM firmware binaries \\
 \texttt{notifications-db-data}  & Notifications Service \\
@@ -513,7 +526,7 @@ Two HPAs are configured, both CPU-triggered:
 \toprule
 \textbf{Component} & \textbf{Min replicas} & \textbf{Max replicas} & \textbf{Metric} \\
 \midrule
-Kong Gateway         & 2 & 5 & CPU utilisation \\
+Kong Gateway       & 2 & 5 & CPU utilisation \\
 Composer Frontend  & 2 & 5 & CPU utilisation \\
 \bottomrule
 \end{tabular}
@@ -539,15 +552,16 @@ The observability stack is deployed via \texttt{k8s/observability.yaml} and cons
 \toprule
 \textbf{Job name} & \textbf{Metrics path} \\
 \midrule
-\texttt{anomaly-api}          & \texttt{anomaly-api:8085/metrics} \\
-\texttt{composer-backend}   & \texttt{compositor-backend:8080/metrics} \\
-\texttt{notifications-service}& \texttt{notifications-service:8083/metrics} \\
-\texttt{oam-service}          & \texttt{oam-service:8080/metrics} \\
+\texttt{anomaly-api}           & \texttt{anomaly-api:8085/metrics} \\
+\texttt{compositor-backend}    & \texttt{compositor-backend:8080/metrics} \\
+\texttt{notifications-service} & \texttt{notifications-service:8083/metrics} \\
+\texttt{oam-service}           & \texttt{oam-service:8080/metrics} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{Stress Testing}
+\label{sec:stress}
 
 Load testing was performed from a local machine using Apache Bench (\texttt{ab}) against the public HTTP endpoint:
 
@@ -555,13 +569,12 @@ Load testing was performed from a local machine using Apache Bench (\texttt{ab})
 ab -n 100000 -c 200 http://grupo4-egs-deti.ua.pt/
 \end{lstlisting}
 
-This generates 100,000 requests with a concurrency of 200. Under this load:
+This generates 100\,000 requests with a concurrency of 200. ApacheBench completed 99\,978 out of 100\,000 requests (Fig.~\ref{fig:stress-requests}) — a 99.978\% success rate under sustained burst load. During the run:
 
 \begin{itemize}[noitemsep]
-  \item The HPA scales Kong and Frontend pods up from 2 toward the 5-replica ceiling.
-  \item Prometheus captures the CPU utilisation spike.
-  \item Grafana dashboards provide real-time visibility into request rates and pod behaviour.
-  \item Kong handles the burst with negligible connection failures.
+  \item Both HPAs scaled to the 5-replica ceiling: Kong CPU peaked at 393\% of target, the Composer Frontend at 359\% (Fig.~\ref{fig:creating-pods}).
+  \item Prometheus captured the CPU utilisation spike, and Grafana dashboards rendered the pod count growth and request rate in real time.
+  \item Once the burst subsided, both HPAs stepped back down toward their minimum replica counts (Fig.~\ref{fig:hpa-events}).
 \end{itemize}
 
 Scaling events can be monitored live:
@@ -574,14 +587,14 @@ kubectl get events -n tenant-grupo4-egs-deti-ua-pt \
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{stress_Requests.png}
-\caption{ApacheBench executing 100,000 requests at concurrency 200 against the live cluster — 99,978 requests completed.}
+\caption{ApacheBench executing 100\,000 requests at concurrency 200 against the live cluster — 99\,978 requests completed.}
 \label{fig:stress-requests}
 \end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{Creating_pods.png}
-\caption{Kong CPU at 393\% and Frontend at 359\% of target — new pods enter \texttt{ContainerCreating} state as the HPA responds to the spike.}
+\caption{Kong CPU at 393\% and Composer Frontend at 359\% of target — new pods enter \texttt{ContainerCreating} as the HPA responds to the spike.}
 \label{fig:creating-pods}
 \end{figure}
 
@@ -593,15 +606,16 @@ kubectl get events -n tenant-grupo4-egs-deti-ua-pt \
 \end{figure}
 
 \section{Resilience Testing}
+\label{sec:resilience}
 
-To validate that the platform tolerates pod failures during live traffic, a resilience test was performed with simultaneous pod termination under load. The terminal captures below show the full lifecycle as it happened.
+To validate that the platform tolerates pod failures during live traffic, a resilience test was performed with simultaneous pod termination under load. The full self-healing lifecycle is captured in Fig.~\ref{fig:resilience}.
 
 Upon pod deletion:
 
 \begin{enumerate}[noitemsep]
   \item The deleted pod transitions to \texttt{Terminating}.
   \item Kubernetes immediately schedules a replacement pod, which enters \texttt{ContainerCreating} state.
-  \item The surviving Frontend replica continues serving requests.
+  \item The surviving replica continues serving requests.
   \item The replacement pod reaches \texttt{Running} within approximately 10--20 seconds.
   \item The HPA re-evaluates and restores the desired replica count.
 \end{enumerate}
@@ -643,15 +657,50 @@ The \texttt{ab} run completes with zero or negligible failed requests — any fa
 \label{ch:conclusions}
 % ============================================================
 
-VoltGuard successfully delivers a production-grade IoT energy monitoring platform within the constraints of a university project. The key achievements are:
+VoltGuard successfully delivers a production-grade IoT energy monitoring platform within the constraints of a university project.
+
+\section{Key Achievements}
 
 \begin{itemize}
   \item \textbf{End-to-end functionality} — from sensor data ingestion, through ML-based anomaly detection, to real-time multi-channel alerting.
-  \item \textbf{Resilient deployment} — Kubernetes HPA with a minimum of 2 replicas for both the gateway and the frontend ensures the platform survives pod failures without downtime.
+  \item \textbf{Resilient deployment} — Kubernetes HPA with a minimum of 2 replicas for both the gateway and the frontend ensures the platform survives pod failures without downtime, empirically demonstrated in §\ref{sec:resilience}.
   \item \textbf{Observability} — Prometheus and Grafana provide full visibility into the platform's runtime behaviour, enabling proactive detection of performance degradation.
   \item \textbf{Security} — Keycloak OIDC with PKCE enforces authenticated access; secrets are never stored in version control or container images.
   \item \textbf{Developer experience} — declarative Kubernetes manifests, a local Docker Compose stack for development, and per-service Swagger UIs make the platform accessible to all team members.
 \end{itemize}
 
-\end{document}
+\section{Limitations}
 
+A balanced view of the platform must acknowledge what was \emph{not} solved within the project window:
+
+\begin{itemize}
+  \item \textbf{No scheduled Prophet retraining.} Models are trained on the dataset submitted with each request; long-term drift across weeks or seasons is not handled.
+  \item \textbf{In-memory caches.} The Composer backend caches OAM responses for short TTLs (4\,s for summary, 8\,s for district stats) in process memory. Cache is lost on restart — acceptable for a 4-second window but not durable.
+  \item \textbf{Single-region deployment.} The platform runs in one namespace on one cluster. Multi-region failover is out of scope.
+  \item \textbf{Simulated sensor fleet.} Sensors are emulated through \texttt{scripts/bring-sensors-online.sh} and a JSON manifest rather than real hardware. The protocol surface is identical, but no real telemetry has been ingested.
+  \item \textbf{Notification delivery best-effort.} If SMTP/Twilio is unreachable, failures are logged but not retried beyond the digest queue; a dedicated retry policy would harden production use.
+\end{itemize}
+
+\section{Lessons Learned}
+
+Several non-obvious lessons emerged from running the project on a shared K3s cluster:
+
+\begin{itemize}
+  \item \textbf{Build-time vs.\ runtime configuration is a real trap.} The frontend's Keycloak URL is baked into the JS bundle at \texttt{npm run build}; changing it requires a new image. We hit this when a stale image continued to point at \texttt{localhost:8081} after a deployment change.
+  \item \textbf{Image rebuild discipline matters.} A bug fix that exists only in source code is not deployed. We had a district-name normalisation fix sitting in \texttt{metricsController.js} for several iterations before noticing the running pod still served the old code — the cluster has no CI that rebuilds on merge.
+  \item \textbf{Idempotency keys pay for themselves.} The \texttt{Idempotency-Key} header on \texttt{POST /v1/notifications} prevented duplicate alerts during a Twilio rate-limit retry storm. Removing it for a quick test immediately produced double-sends.
+  \item \textbf{Browser secure-context requirements bite quietly.} Keycloak-js's PKCE flow needs \texttt{crypto.subtle}, which browsers only expose over HTTPS or \texttt{localhost}. A plain-HTTP test deployment looked broken because the auth library silently degraded.
+  \item \textbf{Diacritic-safe identifiers.} Mapping district names like ``Setúbal'' or ``Bragança'' to ASCII map polygon IDs required Unicode NFD normalisation. The naïve \texttt{toLowerCase().replace(/\textbackslash s+/g,'\_')} silently drops these districts from the dashboard.
+\end{itemize}
+
+\section{Future Work}
+
+\begin{itemize}
+  \item Scheduled Prophet retraining with a configurable cadence per sensor.
+  \item Persistent anomaly state in a dedicated time-series store (e.g.\ TimescaleDB or InfluxDB) so dashboards survive service restarts.
+  \item Real-hardware integration trial with a small fleet of ESP32-class sensors over MQTT.
+  \item End-to-end tracing with OpenTelemetry so a single anomaly can be followed from sensor through Composer, Anomaly, and Notifications.
+  \item Cost-aware autoscaling that weights HPA decisions against energy or cloud cost, not just CPU.
+\end{itemize}
+
+\end{document}
